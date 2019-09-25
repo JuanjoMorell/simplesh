@@ -754,7 +754,7 @@ struct cmd* null_terminate(struct cmd* cmd)
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
-int is_intern_cmd(char* cmd_name) {
+int is_internal_cmd(char* cmd_name) {
     FILE * file = fopen("/home/juanjo/Escritorio/ASO/simplesh/interno", "r");
     char * file_cmd = "";
     size_t len = 0;
@@ -798,6 +798,7 @@ void run_cd(char* cmd_dir) {
     }
 
 	if (cmd_dir == NULL) {
+        // cd HOME
 		char* home = getenv("HOME");
         if (home != NULL) {
             if (chdir(home) == -1) { //Cambiamos al directorio HOME
@@ -811,6 +812,7 @@ void run_cd(char* cmd_dir) {
 	    }
     } 
     else if (strcmp(cmd_dir,"-") == 0) {
+        // cd [-]
 		char* oldpwd = getenv("OLDPWD");
         if (oldpwd == NULL)
             perror("run_cd: Variable OLDPWD no definida");
@@ -826,6 +828,7 @@ void run_cd(char* cmd_dir) {
         }
 	} 
     else {
+        // cd dir
         if (chdir(cmd_dir) == -1) {
             perror("chdir");
         }
@@ -836,7 +839,8 @@ void run_cd(char* cmd_dir) {
 	}
 }
 
-void select_intern(char* cmd_name, char* cmd_arg) {
+void run_internal_cmd(char* cmd_name, char* cmd_arg) {
+    
 
 	if (strcmp(cmd_name, "cwd") == 0)       run_cwd();
 	else if (strcmp(cmd_name, "exit") == 0) run_exit();
@@ -881,8 +885,8 @@ void run_cmd(struct cmd* cmd)
         case EXEC:
             ecmd = (struct execcmd*) cmd;
 	    	//Comprobacion de si es comando interno o externo
-	    	if (is_intern_cmd(ecmd->argv[0]) == 1) {
-	    		select_intern(ecmd->argv[0], ecmd->argv[1]);
+	    	if (is_internal_cmd(ecmd->argv[0]) == 1) {
+	    		run_internal_cmd(ecmd->argv[0], ecmd->argv[1]);
 	    	} else {
             	if (fork_or_panic("fork EXEC") == 0)
                 	exec_cmd(ecmd);
@@ -900,7 +904,7 @@ void run_cmd(struct cmd* cmd)
                     perror("open");
                     exit(EXIT_FAILURE);
                 }
-
+                // TODO cwd > salida como funciona a nivel shell
                 if (rcmd->cmd->type == EXEC)
                     exec_cmd((struct execcmd*) rcmd->cmd);
                 else
@@ -931,9 +935,13 @@ void run_cmd(struct cmd* cmd)
                 TRY( dup(p[1]) );
                 TRY( close(p[0]) );
                 TRY( close(p[1]) );
-                if (pcmd->left->type == EXEC)
-                    exec_cmd((struct execcmd*) pcmd->left);
-                else
+                if (pcmd->left->type == EXEC) {
+                    ecmd = ((struct execcmd*) pcmd->left);
+                    if (is_internal_cmd(ecmd->argv[0]) == 1)
+						run_internal_cmd(ecmd->argv[0], ecmd->argv[1]);
+                    else 
+                        exec_cmd((struct execcmd*) pcmd->left);
+                } else
                     run_cmd(pcmd->left);
                 exit(EXIT_SUCCESS);
             }
@@ -945,12 +953,14 @@ void run_cmd(struct cmd* cmd)
                 TRY( dup(p[0]) );
                 TRY( close(p[0]) );
                 TRY( close(p[1]) );
-				//Comprobar si es interno (exit) TODO
-                if (pcmd->right->type == EXEC)
-					if(is_intern_cmd(((struct execcmd*) pcmd->right)->argv[0]) == 1)
-						select_intern(((struct execcmd*) pcmd->right)->argv[0], ((struct execcmd*) pcmd->right)->argv[1]);
-                    else exec_cmd((struct execcmd*) pcmd->right);
-                else
+				//Comprobar si es interno
+                if (pcmd->right->type == EXEC) {
+                    ecmd = ((struct execcmd*) pcmd->right);
+                    if (is_internal_cmd(ecmd->argv[0]) == 1)
+						run_internal_cmd(ecmd->argv[0], ecmd->argv[1]);
+                    else 
+                        exec_cmd((struct execcmd*) pcmd->right);
+                } else
                     run_cmd(pcmd->right);
                 exit(EXIT_SUCCESS);
             }
@@ -966,20 +976,22 @@ void run_cmd(struct cmd* cmd)
             bcmd = (struct backcmd*)cmd;
             if (fork_or_panic("fork BACK") == 0)
             {
-				//Comprobar comando interno TODO si es interno se ejecuta
-                if (bcmd->cmd->type == EXEC)
-                    exec_cmd((struct execcmd*) bcmd->cmd);
-                else
+                if (bcmd->cmd->type == EXEC) {
+                    ecmd = ((struct execcmd*) bcmd->cmd);
+                    if (is_internal_cmd(ecmd->argv[0]) == 1)
+                        run_internal_cmd(ecmd->argv[0], ecmd->argv[1]);
+                    else 
+                        exec_cmd((struct execcmd*) bcmd->cmd);
+                } else
                     run_cmd(bcmd->cmd);
+                
                 exit(EXIT_SUCCESS);
             }
             break;
 
         case SUBS:
             scmd = (struct subscmd*) cmd;
-            if (fork_or_panic("fork SUBS") == 0)
-            {
-				//Comprobar comando interno TODO
+            if (fork_or_panic("fork SUBS") == 0) {
                 run_cmd(scmd->cmd);
                 exit(EXIT_SUCCESS);
             }
