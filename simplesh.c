@@ -759,7 +759,7 @@ int is_intern_cmd(char* cmd_name) {
     char * file_cmd;
     size_t len = 0;
     ssize_t read;
-	
+
     if (file == NULL) {
         perror("interno not found");
         exit(EXIT_FAILURE);
@@ -786,30 +786,53 @@ void run_cwd() {
 }
 
 void run_exit() {
-    // TODO Liberar memoria de cmd 
+    // TODO Liberar memoria de cmd
 	exit(0);
 }
 
 void run_cd(char* cmd_dir) {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        perror("getcwd");
+        exit(EXIT_FAILURE);
+    }
+
 	if (cmd_dir == NULL) {
-		char* home = getenv("HOME");	
-		if(setenv("OLDPWD", home, 0) == -1) {
-            perror("run_cd: Error asignar OLDPWD");
+		char* home = getenv("HOME");
+        if (home != NULL) {
+            if (chdir(home) == -1) { //Cambiamos al directorio HOME
+                perror("chdir");
+                exit(EXIT_FAILURE);
+            }
+		    if (setenv("OLDPWD", cwd, 1) == -1) { //Actualizamos la variable de entorno OLDPWD
+                perror("setenv");
+                exit(EXIT_FAILURE);
+            }
+	    }
+    } 
+    else if (strcmp(cmd_dir,"-") == 0) {
+		char* oldpwd = getenv("OLDPWD");
+        if (oldpwd == NULL)
+            perror("run_cd: Variable OLDPWD no definida");
+        else {
+		    if (chdir(oldpwd) == -1) {
+                perror("chdir");
+                exit(EXIT_FAILURE);
+            }
+            if (setenv("OLDPWD", cwd, 1) == -1) {
+                perror("setenv");
+                exit(EXIT_FAILURE);
+            }
+        }
+	} 
+    else {
+        if (chdir(cmd_dir) == -1) {
+            perror("chdir");
+        }
+        if(setenv("OLDPWD", cwd, 1) == -1) {
+            perror("setenv");
             exit(EXIT_FAILURE);
         }
-		chdir(home);
-	} else if (strcmp(cmd_dir,"-") == 0) {
-		char* oldpwd = getenv("OLDPWD");
-        // TODO Arreglar los setenv
-        if(oldpwd == NULL) {
-            perror("run_cd: Variable OLDPWD no definida");
-        } else {
-            printf("%s\n", oldpwd);
-		    chdir(oldpwd);
-        }
-	} else {
-		setenv("OLDPWD", cmd_dir, 1);
-		chdir(cmd_dir);	
 	}
 }
 
@@ -862,7 +885,7 @@ void run_cmd(struct cmd* cmd)
             ecmd = (struct execcmd*) cmd;
 	    	//Comprobacion de si es comando interno o externo
 	    	if (is_intern_cmd(ecmd->argv[0]) == 1) {
-	    		select_intern(ecmd->argv[0], ecmd->argv[1]);	    
+	    		select_intern(ecmd->argv[0], ecmd->argv[1]);
 	    	} else {
             	if (fork_or_panic("fork EXEC") == 0)
                 	exec_cmd(ecmd);
@@ -1138,14 +1161,14 @@ char* get_cmd()
 	exit(EXIT_FAILURE);
     }
     char* user = passwd -> pw_name;
-    
+
     char path[PATH_MAX];
     if(!getcwd(path, PATH_MAX)){
 	perror("getcwd");
 	exit(EXIT_FAILURE);
     }
     char *dir = basename(path);
-    
+
     char prompt[strlen(user)+strlen(dir)+4];
     sprintf(prompt, "%s@%s> ", user, dir);
 
@@ -1197,6 +1220,12 @@ void parse_args(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+
+    if( unsetenv("OLDPWD") != 0 ) {
+        perror("unset error");
+        exit(EXIT_FAILURE);
+    }
+
     char* buf;
     struct cmd* cmd;
 
@@ -1212,10 +1241,6 @@ int main(int argc, char** argv)
 
         // Termina en `NULL` todas las cadenas de las estructuras `cmd`
         null_terminate(cmd);
-        if( unsetenv("OLDPWD") == -1 ) {
-            perror("unset error");
-            exit(EXIT_FAILURE);
-        }
 
         DBLOCK(DBG_CMD, {
             info("%s:%d:%s: print_cmd: ",
