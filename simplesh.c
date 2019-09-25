@@ -756,7 +756,7 @@ struct cmd* null_terminate(struct cmd* cmd)
 
 int is_intern_cmd(char* cmd_name) {
     FILE * file = fopen("/home/juanjo/Escritorio/ASO/simplesh/interno", "r");
-    char * file_cmd;
+    char * file_cmd = "";
     size_t len = 0;
     ssize_t read;
 
@@ -838,12 +838,9 @@ void run_cd(char* cmd_dir) {
 
 void select_intern(char* cmd_name, char* cmd_arg) {
 
-	if (strcmp(cmd_name, "cwd") == 0)
-		run_cwd();
-	else if (strcmp(cmd_name, "exit") == 0)
-		run_exit();
-	else if (strcmp(cmd_name, "cd") == 0)
-		run_cd(cmd_arg);
+	if (strcmp(cmd_name, "cwd") == 0)       run_cwd();
+	else if (strcmp(cmd_name, "exit") == 0) run_exit();
+	else if (strcmp(cmd_name, "cd") == 0)   run_cd(cmd_arg);
 
 }
 
