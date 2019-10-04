@@ -751,12 +751,82 @@ struct cmd* null_terminate(struct cmd* cmd)
 }
 
 /******************************************************************************
+ * free_cmd
+ ******************************************************************************/
+
+void free_cmd(struct cmd* cmd)
+{
+    struct execcmd* ecmd;
+    struct redrcmd* rcmd;
+    struct listcmd* lcmd;
+    struct pipecmd* pcmd;
+    struct backcmd* bcmd;
+    struct subscmd* scmd;
+
+    if(cmd == 0) return;
+
+    switch(cmd->type)
+    {
+        case EXEC:
+            break;
+
+        case REDR:
+            rcmd = (struct redrcmd*) cmd;
+            free_cmd(rcmd->cmd);
+
+            free(rcmd->cmd);
+            break;
+
+        case LIST:
+            lcmd = (struct listcmd*) cmd;
+
+            free_cmd(lcmd->left);
+            free_cmd(lcmd->right);
+
+            free(lcmd->right);
+            free(lcmd->left);
+            break;
+
+        case PIPE:
+            pcmd = (struct pipecmd*) cmd;
+
+            free_cmd(pcmd->left);
+            free_cmd(pcmd->right);
+
+            free(pcmd->right);
+            free(pcmd->left);
+            break;
+
+        case BACK:
+            bcmd = (struct backcmd*) cmd;
+
+            free_cmd(bcmd->cmd);
+
+            free(bcmd->cmd);
+            break;
+
+        case SUBS:
+            scmd = (struct subscmd*) cmd;
+
+            free_cmd(scmd->cmd);
+
+            free(scmd->cmd);
+            break;
+
+        case INV:
+        default:
+            panic("%s: estructura `cmd` desconocida\n", __func__);
+    }
+    //free(cmd);
+}
+
+/******************************************************************************
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
 int is_internal_cmd(char* cmd_name)
 {
-    FILE * file = fopen("/home/jose/simplesh/interno", "r");
+    FILE * file = fopen("/home/juanjo/Escritorio/simplesh/interno", "r");
     char * file_cmd = "";
     size_t len = 0;
     ssize_t read;
@@ -793,7 +863,11 @@ void run_cwd()
     printf("cwd: %s\n", path);
 }
 
-void run_exit() { exit(0); }
+void run_exit(struct execcmd* cmd) 
+{ 
+    free(cmd);
+    exit(0); 
+}
 
 void run_cd(char* path)
 {
@@ -859,7 +933,7 @@ void run_cd(char* path)
 void run_internal_cmd(struct execcmd* ecmd) 
 {
 	if (strcmp(ecmd->argv[0], "cwd") == 0)       run_cwd();
-	else if (strcmp(ecmd->argv[0], "exit") == 0) run_exit();
+	else if (strcmp(ecmd->argv[0], "exit") == 0) run_exit(ecmd);
 	else if (strcmp(ecmd->argv[0], "cd") == 0)
 	{
 	    if (ecmd->argc > 2) printf("run_cd: Demasiados argumentos\n");
@@ -1098,73 +1172,6 @@ void print_cmd(struct cmd* cmd)
         default:
             panic("%s: estructura `cmd` desconocida\n", __func__);
     }
-}
-
-
-void free_cmd(struct cmd* cmd)
-{
-    struct execcmd* ecmd;
-    struct redrcmd* rcmd;
-    struct listcmd* lcmd;
-    struct pipecmd* pcmd;
-    struct backcmd* bcmd;
-    struct subscmd* scmd;
-
-    if(cmd == 0) return;
-
-    switch(cmd->type)
-    {
-        case EXEC:
-            break;
-
-        case REDR:
-            rcmd = (struct redrcmd*) cmd;
-            free_cmd(rcmd->cmd);
-
-            free(rcmd->cmd);
-            break;
-
-        case LIST:
-            lcmd = (struct listcmd*) cmd;
-
-            free_cmd(lcmd->left);
-            free_cmd(lcmd->right);
-
-            free(lcmd->right);
-            free(lcmd->left);
-            break;
-
-        case PIPE:
-            pcmd = (struct pipecmd*) cmd;
-
-            free_cmd(pcmd->left);
-            free_cmd(pcmd->right);
-
-            free(pcmd->right);
-            free(pcmd->left);
-            break;
-
-        case BACK:
-            bcmd = (struct backcmd*) cmd;
-
-            free_cmd(bcmd->cmd);
-
-            free(bcmd->cmd);
-            break;
-
-        case SUBS:
-            scmd = (struct subscmd*) cmd;
-
-            free_cmd(scmd->cmd);
-
-            free(scmd->cmd);
-            break;
-
-        case INV:
-        default:
-            panic("%s: estructura `cmd` desconocida\n", __func__);
-    }
-    // free(cmd);
 }
 
 
