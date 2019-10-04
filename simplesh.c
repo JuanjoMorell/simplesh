@@ -751,76 +751,6 @@ struct cmd* null_terminate(struct cmd* cmd)
 }
 
 /******************************************************************************
- * free_cmd
- ******************************************************************************/
-
-void free_cmd(struct cmd* cmd)
-{
-    struct execcmd* ecmd;
-    struct redrcmd* rcmd;
-    struct listcmd* lcmd;
-    struct pipecmd* pcmd;
-    struct backcmd* bcmd;
-    struct subscmd* scmd;
-
-    if(cmd == 0) return;
-
-    switch(cmd->type)
-    {
-        case EXEC:
-            break;
-
-        case REDR:
-            rcmd = (struct redrcmd*) cmd;
-            free_cmd(rcmd->cmd);
-
-            free(rcmd->cmd);
-            break;
-
-        case LIST:
-            lcmd = (struct listcmd*) cmd;
-
-            free_cmd(lcmd->left);
-            free_cmd(lcmd->right);
-
-            free(lcmd->right);
-            free(lcmd->left);
-            break;
-
-        case PIPE:
-            pcmd = (struct pipecmd*) cmd;
-
-            free_cmd(pcmd->left);
-            free_cmd(pcmd->right);
-
-            free(pcmd->right);
-            free(pcmd->left);
-            break;
-
-        case BACK:
-            bcmd = (struct backcmd*) cmd;
-
-            free_cmd(bcmd->cmd);
-
-            free(bcmd->cmd);
-            break;
-
-        case SUBS:
-            scmd = (struct subscmd*) cmd;
-
-            free_cmd(scmd->cmd);
-
-            free(scmd->cmd);
-            break;
-
-        case INV:
-        default:
-            panic("%s: estructura `cmd` desconocida\n", __func__);
-    }
-    //free(cmd);
-}
-
-/******************************************************************************
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
@@ -1099,6 +1029,75 @@ void run_cmd(struct cmd* cmd)
     DPRINTF(DBG_TRACE, "END\n");
 }
 
+/******************************************************************************
+ * free_cmd
+ ******************************************************************************/
+
+void free_cmd(struct cmd* cmd)
+{
+    struct execcmd* ecmd;
+    struct redrcmd* rcmd;
+    struct listcmd* lcmd;
+    struct pipecmd* pcmd;
+    struct backcmd* bcmd;
+    struct subscmd* scmd;
+
+    if(cmd == 0) return;
+
+    switch(cmd->type)
+    {
+        case EXEC:
+            break;
+
+        case REDR:
+            rcmd = (struct redrcmd*) cmd;
+            free_cmd(rcmd->cmd);
+
+            free(rcmd->cmd);
+            break;
+
+        case LIST:
+            lcmd = (struct listcmd*) cmd;
+
+            free_cmd(lcmd->left);
+            free_cmd(lcmd->right);
+
+            free(lcmd->right);
+            free(lcmd->left);
+            break;
+
+        case PIPE:
+            pcmd = (struct pipecmd*) cmd;
+
+            free_cmd(pcmd->left);
+            free_cmd(pcmd->right);
+
+            free(pcmd->right);
+            free(pcmd->left);
+            break;
+
+        case BACK:
+            bcmd = (struct backcmd*) cmd;
+
+            free_cmd(bcmd->cmd);
+
+            free(bcmd->cmd);
+            break;
+
+        case SUBS:
+            scmd = (struct subscmd*) cmd;
+
+            free_cmd(scmd->cmd);
+
+            free(scmd->cmd);
+            break;
+
+        case INV:
+        default:
+            panic("%s: estructura `cmd` desconocida\n", __func__);
+    }
+    //free(cmd);
+}
 
 void print_cmd(struct cmd* cmd)
 {
