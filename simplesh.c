@@ -761,7 +761,7 @@ int is_internal_cmd(char* cmd_name)
     if (cmd_name == NULL) return 0;
 
     for(int i = 0; i < NUM_INTERNAL_CMDS; i++) {
-        if(strcmp(INTERNAL_COMMANDS[i], cmd_name))
+        if(strcmp(INTERNAL_COMMANDS[i], cmd_name) == 0)
             return 1;
     }
 
@@ -903,6 +903,26 @@ void run_cmd(struct cmd* cmd)
 
         case REDR:
             rcmd = (struct redrcmd*) cmd;
+
+            if(rcmd->cmd->type == EXEC)
+            {
+                ecmd = (struct execcmd*) rcmd->cmd;
+                if(is_internal_cmd(ecmd->argv[0]) == 1)
+                {
+                    int stdout_bak = dup(rcmd->fd);
+                    if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0)
+                    {
+                        perror("open");
+                        exit(EXIT_FAILURE);
+                    }
+                    TRY( dup2(fd, rcmd->fd) );
+                    TRY( close(fd) );
+                    run_internal_cmd(ecmd);
+                    TRY( dup2(stdout_bak, rcmd->fd) );
+                    TRY( close(stdout_bak) );
+                    break;
+                }
+            }
             if (fork_or_panic("fork REDR") == 0)
             {
                 TRY( close(rcmd->fd) );
@@ -911,7 +931,6 @@ void run_cmd(struct cmd* cmd)
                     perror("open");
                     exit(EXIT_FAILURE);
                 }
-                // TODO cwd > salida como funciona a nivel shell
                 if (rcmd->cmd->type == EXEC)
                     exec_cmd((struct execcmd*) rcmd->cmd);
                 else
