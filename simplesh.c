@@ -86,13 +86,15 @@ static int g_dbg_level = 0;
 
 // Número máximo de argumentos de un comando
 #define MAX_ARGS 16
-
+// Número de comandos internos
+#define NUM_INTERNAL_CMDS 4
 
 // Delimitadores
 static const char WHITESPACE[] = " \t\r\n\v";
 // Caracteres especiales
 static const char SYMBOLS[] = "<|>&;()";
-
+//Comando internos
+static const char *INTERNAL_COMMANDS[] = {"exit", "cwd", "cd", "psplit"};
 
 /******************************************************************************
  * Funciones auxiliares
@@ -756,27 +758,13 @@ struct cmd* null_terminate(struct cmd* cmd)
 
 int is_internal_cmd(char* cmd_name)
 {
-    FILE * file = fopen("/home/jose/simplesh/interno", "r");
-    char * file_cmd = "";
-    size_t len = 0;
-    ssize_t read;
+    if (cmd_name == NULL) return 0;
 
-    if (file == NULL)
-    {
-        perror("internal commands not found");
-        exit(EXIT_FAILURE);
-    }
-    while ((read = getline(&file_cmd, &len, file)) != -1)
-    {
-        if (strcmp(strtok(file_cmd, "\n"), cmd_name) == 0)
-        {
-            fclose(file);
-            free(file_cmd);
+    for(int i = 0; i < NUM_INTERNAL_CMDS; i++) {
+        if(strcmp(INTERNAL_COMMANDS[i], cmd_name))
             return 1;
-        }
     }
-    fclose(file);
-    free(file_cmd);
+
     return 0;
 }
 
