@@ -5,10 +5,10 @@
  * Departamento de Ingeniería y Tecnología de Computadores
  * Facultad de Informática de la Universidad de Murcia
  *
- * Alumnos: APELLIDOS, NOMBRE (GX.X)
- *          APELLIDOS, NOMBRE (GX.X)
+ * Alumnos: MORELL FERNÁNDEZ, JUANJO       (G1.1)
+ *          PASTOR VALERA     JOSÉ ANTONIO (G1.1)
  *
- * Convocatoria: FEBRERO/JUNIO/JULIO
+ * Convocatoria: FEBRERO
  */
 
 
