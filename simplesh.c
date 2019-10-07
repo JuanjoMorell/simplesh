@@ -5,8 +5,8 @@
  * Departamento de Ingeniería y Tecnología de Computadores
  * Facultad de Informática de la Universidad de Murcia
  *
- * Alumnos: MORELL FERNÁNDEZ, JUANJO       (G1.1)
- *          PASTOR VALERA,    JOSÉ ANTONIO (G1.1)
+ * Alumnos: MORELL FERNÁNDEZ, JUAN JOSÉ       (G1.1)
+ *          PASTOR VALERA,    JOSÉ ANTONIO    (G1.1)
  *
  * Convocatoria: FEBRERO
  */
