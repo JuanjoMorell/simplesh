@@ -846,16 +846,114 @@ void run_cd(char* path)
 
 void run_psplit(struct execcmd* ecmd)
 {
-    int opt, flag, n;
-    flag = n = 0;
+    int opt;
     optind = 1;
-    while((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:")) != -1)
-    {
+    int MAX_BSIZE = 1048576; //2^20
 
+    //Valores por defecto
+    int NLINES = 0, NBYTES = 0, BSIZE = 1024, PROCS = 1;
+
+    //----------------------------------------------------------------------ARGUMENTOS
+    while((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1)
+    {
+        switch (opt)
+        {
+            case 'l':
+                NLINES = atoi(optarg);
+                break;
+        
+            case 'b':
+                NBYTES = atoi(optarg);
+                break;
+        
+            case 's':
+                BSIZE = atoi(optarg);
+                break;
+
+            case 'p':
+                PROCS = atoi(optarg);
+                break;
+
+            case 'h':
+                printf("Uso: psplit [-l NLINES] [-b NBYTES]   [-s BSIZE] [-p PROCS] [FILE1] [FILE2 ]...\n");
+                printf("     Opciones:\n");
+                printf("     -l NLINES Número máximo de líneas  por  fichero.\n");
+                printf("     -b NBYTES Número máximo de  bytes  por  fichero.\n");
+                printf("     -s BSIZE  Tamaño en bytes  de los  bloques  leídos de [FILEn] o stdin.\n");
+                printf("     -p PROCS  Número máximo de  procesos  simultáneos.\n");
+                printf("     -h        Ayuda\n");
+                break;
+
+            default:
+                break;
+        }
     }
-    for (int i = optind; i < ecmd->argc; i++)
-        //Comprobar tamaño del fichero y que no aparezcan las opciones l y b juntas
-        printf("%s\n", ecmd->argv[i]);
+
+    //------------------------------------------------------------------COMPROBACIONES
+    //Comprobar que no esten las opciones -l y -b al mismo tiempo
+    if (NLINES != 0 && NBYTES != 0)
+    {
+        printf("%s: Opciones incompatibles\n", ecmd->argv[0]);
+        return;
+    }
+
+    //Comprobar BSIZE
+    if(BSIZE < 1 || BSIZE > MAX_BSIZE) 
+    {
+        printf("%s: Opción -s no válida\n", ecmd->argv[0]);
+        return;
+    }
+
+    //Comprobar PROCS
+    if(PROCS < 1)
+    {
+        printf("%s: Opción -p no válida\n", ecmd->argv[0]);
+        return;
+    }
+
+    //-----------------------------------------------TRATAMIENTO DE LOS FICHEROS
+    //Nombre de los ficheros
+    int NFILES = ecmd->argc - optind;
+    //Nombre de los ficheros
+    char* ficheros[NFILES];
+    //Descriptores de los ficheros
+    int* descriptores[NFILES];
+    int x = 0;
+
+    //Obtenemos el nombre de los ficheros
+    for (int i = optind; i < ecmd->argc; i++) 
+    {
+        ficheros[x] = ecmd->argv[i];
+        x++;
+    }
+
+    for(int i = 0; i < NFILES; i++) 
+    {
+        //---------------REPETIR CON TODOS LOS FICHEROS---------------------------
+        //1. Abrir fichero -> descriptor                                         |
+        //  -------------------------------------------------------------------  |
+        //2. Leer BSIZE del fichero abierto                                   |  |
+        //3. Coger de DATOS la cadena de texto que tenga NBYTES o NLINES      |  |
+        //4. Crear un archivo del tamaño del BUFFER_AUX a escribir            |  |
+        //5. Escribir en el archivo                                           |  |
+        //6. Cerrar archivo                                                   |  |
+        //  --------REPETIR hasta que el fichero no tenga mas caracteres------|  |
+        //7. Cerrar fichero                                                      |
+        //-----------------------------------------------------------------------|
+
+        descriptores[i] = open(ficheros[i], O_RDONLY);
+        char datos[BSIZE];
+        int leidos, total;
+        /*
+        while() //Hasta que el fichero no llegue al final o no se lean NBYTES 
+        { 
+            leidos = read(descriptores[i], datos, BSIZE);
+            total += leidos;
+            if(leidos == 0 || total == NBYTES)
+        }
+        */
+    } 
+    
 }
 //--------------------------
 //No se lee todo del tiron, ni byte a byte
