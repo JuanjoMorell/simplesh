@@ -844,6 +844,33 @@ void run_cd(char* path)
 	}
 }
 
+void run_psplit(struct execcmd* ecmd)
+{
+    int opt, flag, n;
+    flag = n = 0;
+    optind = 1;
+    while((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:")) != -1)
+    {
+
+    }
+    for (int i = optind; i < ecmd->argc; i++)
+        //Comprobar tamaño del fichero y que no aparezcan las opciones l y b juntas
+        printf("%s\n", ecmd->argv[i]);
+}
+//--------------------------
+//No se lee todo del tiron, ni byte a byte
+//Se le c o b bytes en streaming
+//Escribir el numero maximo de bytes posibles
+//--------------------------
+//Funcion para las escrituras parciales:
+//write(fd, buf, 1024) -> 512; write(fd, buf+512, 1024-512) -> 256; write(fd, buf+512+256, 1024-512-256)...
+//--------------------------
+// ESTO SE IGNORA HASTA QUE PSPLIT FUNCIONE SIN PARALELOS
+// -f -n 5 f1 f2 f3 -> fork(psplit(f1)); fork(psplit(f2)) -> Tantos fork que puedan hacerse dependiendo de PROCS, y se espera al mas
+// antiguo wait(f1) -> necesario almacenar los pid para saber si termina el proceso mas antiguo -> array de pid.
+// Si no hay mas ficheros se finaliza el bucle y se hace un wait() para los procesos que estan en vuelo
+//--------------------------
+
 void run_internal_cmd(struct execcmd* ecmd) 
 {
 	if (strcmp(ecmd->argv[0], "cwd") == 0)       run_cwd();
@@ -853,6 +880,7 @@ void run_internal_cmd(struct execcmd* ecmd)
 	    if (ecmd->argc > 2) printf("run_cd: Demasiados argumentos\n");
 	    else run_cd(ecmd->argv[1]);
 	}
+    else if (strcmp(ecmd->argv[0], "psplit") == 0) run_psplit(ecmd);
 }
 
 /******************************************************************************
