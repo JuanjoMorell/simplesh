@@ -860,9 +860,9 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
         while(escritos >= 0 && escritos < bleidos)
         {
             cont++;
-            char* nombre = file + cont;
-            printf("%s\n", nombre);
-            int fichero_aux = open(nombre, O_CREAT | O_RDWR, S_IRWXU);
+            char new_file[strlen(file) + 4];
+            sprintf(new_file, "%s%d", file, cont);
+            int fichero_aux = open(new_file, O_CREAT | O_RDWR, S_IRWXU);
             bescritos = write(fichero_aux, DATOS+escritos, NBYTES);
             
             if(bescritos < NBYTES && escritos+bescritos == bleidos)
