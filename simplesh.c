@@ -863,7 +863,7 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             char* nombre = file + cont;
             printf("%s\n", nombre);
             int fichero_aux = open(nombre, O_CREAT | O_RDWR, S_IRWXU);
-            bescritos = write(fichero_aux, DATOS, NBYTES);
+            bescritos = write(fichero_aux, DATOS+escritos, NBYTES);
             
             if(bescritos < NBYTES && escritos+bescritos == bleidos)
             {
