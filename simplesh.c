@@ -844,6 +844,38 @@ void run_cd(char* path)
 	}
 }
 
+void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
+{
+    char DATOS[BSIZE];
+    int bleidos, bescritos, restantes, fichero_incomp, mitad, cont=0;
+
+    while((bleidos = read(fd, DATOS, BSIZE)) != 0)
+    {
+        int escritos = 0;
+        if(mitad == 1)
+        {
+            escritos += write(fichero_incomp, DATOS, restantes);
+            mitad = 0;
+        }
+        while(escritos >= 0 && escritos < bleidos)
+        {
+            cont++;
+            char* nombre = file + cont;
+            printf("%s\n", nombre);
+            int fichero_aux = open(nombre, O_CREAT | O_RDWR, S_IRWXU);
+            bescritos = write(fichero_aux, DATOS, NBYTES);
+            
+            if(bescritos < NBYTES && escritos+bescritos == bleidos)
+            {
+                fichero_incomp = fichero_aux;
+                mitad = 1;
+                restantes = NBYTES - bescritos;
+            }
+            escritos += bescritos;
+        }
+    }
+}
+
 void run_psplit(struct execcmd* ecmd)
 {
     int opt;
@@ -929,29 +961,11 @@ void run_psplit(struct execcmd* ecmd)
 
     for(int i = 0; i < NFILES; i++) 
     {
-        //---------------REPETIR CON TODOS LOS FICHEROS---------------------------
-        //1. Abrir fichero -> descriptor                                         |
-        //  -------------------------------------------------------------------  |
-        //2. Leer BSIZE del fichero abierto                                   |  |
-        //3. Coger de DATOS la cadena de texto que tenga NBYTES o NLINES      |  |
-        //4. Crear un archivo del tamaño del BUFFER_AUX a escribir            |  |
-        //5. Escribir en el archivo                                           |  |
-        //6. Cerrar archivo                                                   |  |
-        //  --------REPETIR hasta que el fichero no tenga mas caracteres------|  |
-        //7. Cerrar fichero                                                      |
-        //-----------------------------------------------------------------------|
-
-        descriptores[i] = open(ficheros[i], O_RDONLY);
-        char datos[BSIZE];
-        int leidos, total;
-        /*
-        while() //Hasta que el fichero no llegue al final o no se lean NBYTES 
-        { 
-            leidos = read(descriptores[i], datos, BSIZE);
-            total += leidos;
-            if(leidos == 0 || total == NBYTES)
+        int filedes = open(ecmd->argv[optind], O_RDONLY);
+        if(NBYTES != 0) 
+        {
+            escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
         }
-        */
     } 
     
 }
