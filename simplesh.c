@@ -1001,15 +1001,33 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
     }
 }
 
-int comprobar_linea(char* DATOS, int escritos, int BSIZE)
+int comprobar_linea(char* DATOS, int escritos, int lineas, int BSIZE)
 {
+    int leidas = 0;
     int cont = -1;
     for(int i = escritos; i<BSIZE; i++)
     {
+        if(DATOS[i] ==  '\n')
+        {
+            leidas++;
+        }
+        if(leidas == lineas)
+        {
+            cont = (i-escritos)+1;
+            break;
+        }
+    }
+    return cont;
+}
+
+int contar_lineas(char* DATOS, int BSIZE)
+{
+    int cont = 0;
+    for (int i = 0; i<BSIZE; i++) 
+    {
         if(DATOS[i] == '\n')
         {
-            cont = i;
-            break;
+            cont++;
         }
     }
     return cont;
@@ -1018,41 +1036,73 @@ int comprobar_linea(char* DATOS, int escritos, int BSIZE)
 // FALTA: DIVIDIR EN MAS DE UNA LINEA, ULTIMO FICHERO TERMINE BIEN
 void escribir_lineas(int fd, char* file, int NLINES, int BSIZE) 
 {
-    char DATOS[BSIZE];
-    int bleidos, bescritos, fichero_incomp, mitad, tam_linea, cont=0;
+    char data[BSIZE]; // Data buffer
 
-    while((bleidos = read(fd, DATOS, BSIZE)) != 0)
+    int read_from_source    = 0; // Bytes leídos del fichero original
+    int remaining           = NLINES; // Lineas restantes por escribir en el fichero
+    int total_written       = 0; // Bytes totales escritos del buffer
+    int is_incomplete       = 0; // Flag de fichero incompleto
+    int incomplete_fd       = 0; // Descriptor de fichero incompleto
+    int current_file        = 0; // Descriptor del fichero actual
+    int next_file_id        = 0; // Siguiente número de fichero
+    int bytes_in_buffer     = 0; // Bytes totales en el buffer
+
+    // Leer mientras el fichero no esté vacío.
+    while ((read_from_source = read(fd, data, BSIZE)) != 0)
     {
-        int escritos = 0;
+        bytes_in_buffer = read_from_source;
+        // Actúa como puntero al buffer de bytes, cada vez que escribamos
+        // bytes del buffer en el fichero, se sumará el número de bytes
+        // escritos a esta variable, por lo que la próxima vez 
+        // empezaremos a escribir en el fichero desde la posición
+        // data + total_written
+        total_written = 0;
 
-        while(escritos >= 0 && escritos < bleidos)
+        // Si el fichero está incompleto
+        if (is_incomplete)
         {
-            cont++;
-            char new_file[strlen(file) + 4];
-            sprintf(new_file, "%s%d", file, cont);
-            int fichero_aux = open(new_file, O_CREAT | O_RDWR, S_IRWXU);
-            int restantes = NLINES;
-            
-            if(mitad == 1)
+            int comprobacion = comprobar_linea(data, total_written, remaining, BSIZE);
+            if (comprobacion == -1)
             {
-                fichero_aux = fichero_incomp;
-                mitad = 0;
+                total_written += write(incomplete_fd, data, bytes_in_buffer);
+                remaining -= contar_lineas(data, BSIZE);
+                bytes_in_buffer = 0;
             }
-
-            while(restantes != 0 && mitad != 1)
+            else
             {
-                if((tam_linea = comprobar_linea(DATOS, escritos, BSIZE)) != -1)
-                {   
-                    escritos += write(fichero_aux, DATOS+escritos, (tam_linea+1)-escritos);
-                    restantes--;
-                }
-                else
-                {
-                    fichero_incomp = fichero_aux;
-                    escritos += write(fichero_aux, DATOS+escritos, BSIZE);
-                    mitad = 1;
-                }
-            }   
+                total_written += write(incomplete_fd, data, comprobacion);
+                is_incomplete = 0;
+                remaining = NLINES;
+                bytes_in_buffer -= comprobacion;
+            }
+        }
+
+        // Mientras queden bytes en el buffer...
+        while (bytes_in_buffer > 0)
+        {
+            // Construimos el nombre del nuevo fichero
+            char file_name[12];
+            sprintf(file_name, "%s%d", file, next_file_id);
+            next_file_id++;
+
+            // Abrimos el fichero
+            current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
+
+            int comprobacion = comprobar_linea(data, total_written, remaining, BSIZE);
+            if (comprobacion == -1)
+            {
+                total_written += write(current_file, data + total_written, bytes_in_buffer);
+                is_incomplete = 1;
+                incomplete_fd = current_file;
+                remaining -= contar_lineas(data, BSIZE);
+                bytes_in_buffer = 0;
+            }
+            else
+            {
+                total_written += write(current_file, data + total_written, comprobacion);
+                bytes_in_buffer -= comprobacion;
+                remaining = NLINES;
+            }
         }
     }
 }
@@ -1149,7 +1199,7 @@ void run_psplit(struct execcmd* ecmd)
         } 
         else if(NLINES != 0)
         {
-            escribir_lineas(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+            escribir_lineas(filedes, ecmd->argv[optind], NLINES, BSIZE);
         }
     } 
     
