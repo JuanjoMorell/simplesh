@@ -174,6 +174,8 @@ int fork_or_panic(const char* s)
 enum cmd_type { EXEC=1, REDR=2, PIPE=3, LIST=4, BACK=5, SUBS=6, INV=7 };
 
 struct cmd { enum cmd_type type; };
+//Variable global de cmd
+struct cmd* cmd;
 
 // Comando con sus parámetros
 struct execcmd {
@@ -753,6 +755,84 @@ struct cmd* null_terminate(struct cmd* cmd)
 }
 
 /******************************************************************************
+ * Free CMD
+ ******************************************************************************/
+
+void free_cmd(struct cmd* cmd)
+{
+    struct execcmd* ecmd;
+    struct redrcmd* rcmd;
+    struct listcmd* lcmd;
+    struct pipecmd* pcmd;
+    struct backcmd* bcmd;
+    struct subscmd* scmd;
+
+    if(cmd == 0) return;
+
+    switch(cmd->type)
+    {
+        case EXEC:
+            ecmd = (struct execcmd*) cmd;
+            free(ecmd);
+            break;
+
+        case REDR:
+            rcmd = (struct redrcmd*) cmd;
+            free_cmd(rcmd->cmd);
+
+            //free(rcmd->cmd);
+            free(rcmd);
+            break;
+
+        case LIST:
+            lcmd = (struct listcmd*) cmd;
+
+            free_cmd(lcmd->left);
+            free_cmd(lcmd->right);
+
+            //free(lcmd->right);
+            //free(lcmd->left);
+            free(lcmd);
+            break;
+
+        case PIPE:
+            pcmd = (struct pipecmd*) cmd;
+
+            free_cmd(pcmd->left);
+            free_cmd(pcmd->right);
+
+            //free(pcmd->right);
+            //free(pcmd->left);
+            free(pcmd);
+            break;
+
+        case BACK:
+            bcmd = (struct backcmd*) cmd;
+
+            free_cmd(bcmd->cmd);
+
+            //free(bcmd->cmd);
+            free(bcmd);
+            break;
+
+        case SUBS:
+            scmd = (struct subscmd*) cmd;
+
+            free_cmd(scmd->cmd);
+
+            //free(scmd->cmd);
+            free(scmd);
+            break;
+
+        case INV:
+        default:
+            panic("%s: estructura `cmd` desconocida\n", __func__);
+    }
+    // free(cmd);
+}
+
+
+/******************************************************************************
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
@@ -781,7 +861,11 @@ void run_cwd()
     printf("cwd: %s\n", path);
 }
 
-void run_exit() { exit(0); }
+void run_exit() 
+{ 
+    free_cmd(cmd);
+    exit(0); 
+}
 
 void run_cd(char* path)
 {
@@ -876,6 +960,62 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
     }
 }
 
+int comprobar_linea(char* DATOS, int escritos, int BSIZE)
+{
+    int cont = -1;
+    for(int i = escritos; i<BSIZE; i++)
+    {
+        if(DATOS[i] == '\n')
+        {
+            cont = i;
+            break;
+        }
+    }
+    return cont;
+}
+
+// FALTA: DIVIDIR EN MAS DE UNA LINEA, ULTIMO FICHERO TERMINE BIEN
+void escribir_lineas(int fd, char* file, int NLINES, int BSIZE) 
+{
+    char DATOS[BSIZE];
+    int bleidos, bescritos, fichero_incomp, mitad, tam_linea, cont=0;
+
+    while((bleidos = read(fd, DATOS, BSIZE)) != 0)
+    {
+        int escritos = 0;
+
+        while(escritos >= 0 && escritos < bleidos)
+        {
+            cont++;
+            char new_file[strlen(file) + 4];
+            sprintf(new_file, "%s%d", file, cont);
+            int fichero_aux = open(new_file, O_CREAT | O_RDWR, S_IRWXU);
+            int restantes = NLINES;
+            
+            if(mitad == 1)
+            {
+                fichero_aux = fichero_incomp;
+                mitad = 0;
+            }
+
+            while(restantes != 0 && mitad != 1)
+            {
+                if((tam_linea = comprobar_linea(DATOS, escritos, BSIZE)) != -1)
+                {   
+                    escritos += write(fichero_aux, DATOS+escritos, (tam_linea+1)-escritos);
+                    restantes--;
+                }
+                else
+                {
+                    fichero_incomp = fichero_aux;
+                    escritos += write(fichero_aux, DATOS+escritos, BSIZE);
+                    mitad = 1;
+                }
+            }   
+        }
+    }
+}
+
 void run_psplit(struct execcmd* ecmd)
 {
     int opt;
@@ -965,6 +1105,10 @@ void run_psplit(struct execcmd* ecmd)
         if(NBYTES != 0) 
         {
             escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+        } 
+        else if(NLINES != 0)
+        {
+            escribir_lineas(filedes, ecmd->argv[optind], NBYTES, BSIZE);
         }
     } 
     
@@ -1248,73 +1392,6 @@ void print_cmd(struct cmd* cmd)
 }
 
 
-void free_cmd(struct cmd* cmd)
-{
-    struct execcmd* ecmd;
-    struct redrcmd* rcmd;
-    struct listcmd* lcmd;
-    struct pipecmd* pcmd;
-    struct backcmd* bcmd;
-    struct subscmd* scmd;
-
-    if(cmd == 0) return;
-
-    switch(cmd->type)
-    {
-        case EXEC:
-            break;
-
-        case REDR:
-            rcmd = (struct redrcmd*) cmd;
-            free_cmd(rcmd->cmd);
-
-            free(rcmd->cmd);
-            break;
-
-        case LIST:
-            lcmd = (struct listcmd*) cmd;
-
-            free_cmd(lcmd->left);
-            free_cmd(lcmd->right);
-
-            free(lcmd->right);
-            free(lcmd->left);
-            break;
-
-        case PIPE:
-            pcmd = (struct pipecmd*) cmd;
-
-            free_cmd(pcmd->left);
-            free_cmd(pcmd->right);
-
-            free(pcmd->right);
-            free(pcmd->left);
-            break;
-
-        case BACK:
-            bcmd = (struct backcmd*) cmd;
-
-            free_cmd(bcmd->cmd);
-
-            free(bcmd->cmd);
-            break;
-
-        case SUBS:
-            scmd = (struct subscmd*) cmd;
-
-            free_cmd(scmd->cmd);
-
-            free(scmd->cmd);
-            break;
-
-        case INV:
-        default:
-            panic("%s: estructura `cmd` desconocida\n", __func__);
-    }
-    // free(cmd);
-}
-
-
 /******************************************************************************
  * Lectura de la línea de órdenes con la biblioteca libreadline
  ******************************************************************************/
@@ -1404,7 +1481,7 @@ int main(int argc, char** argv)
     }
 
     char* buf;
-    struct cmd* cmd;
+
 
     parse_args(argc, argv);
 
