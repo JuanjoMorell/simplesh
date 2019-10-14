@@ -930,32 +930,73 @@ void run_cd(char* path)
 
 void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
 {
-    char DATOS[BSIZE];
-    int bleidos, bescritos, restantes, fichero_incomp, mitad, cont=0;
+    char data[BSIZE]; // Data buffer
 
-    while((bleidos = read(fd, DATOS, BSIZE)) != 0)
+    int read_from_source    = 0; // Bytes leídos del fichero original
+    int remaining           = 0; // Bytes restantes por escribir en el fichero
+    int total_written       = 0; // Bytes totales escritos del buffer
+    int is_incomplete       = 0; // Flag de fichero incompleto
+    int incomplete_fd       = 0; // Descriptor de fichero incompleto
+    int current_file        = 0; // Descriptor del fichero actual
+    int next_file_id        = 0; // Siguiente número de fichero
+    int bytes_in_buffer     = 0; // Bytes totales en el buffer
+
+    // Leer mientras el fichero no esté vacío.
+    while ((read_from_source = read(fd, data, BSIZE)) != 0)
     {
-        int escritos = 0;
-        if(mitad == 1)
+        bytes_in_buffer = read_from_source;
+        // Actúa como puntero al buffer de bytes, cada vez que escribamos
+        // bytes del buffer en el fichero, se sumará el número de bytes
+        // escritos a esta variable, por lo que la próxima vez 
+        // empezaremos a escribir en el fichero desde la posición
+        // data + total_written
+        total_written = 0;
+
+        // Si el fichero está incompleto
+        if (is_incomplete)
         {
-            escritos += write(fichero_incomp, DATOS, restantes);
-            mitad = 0;
-        }
-        while(escritos >= 0 && escritos < bleidos)
-        {
-            cont++;
-            char new_file[strlen(file) + 4];
-            sprintf(new_file, "%s%d", file, cont);
-            int fichero_aux = open(new_file, O_CREAT | O_RDWR, S_IRWXU);
-            bescritos = write(fichero_aux, DATOS+escritos, NBYTES);
-            
-            if(bescritos < NBYTES && escritos+bescritos == bleidos)
+            // Si faltan más bytes por escribir de los que hay en el buffer
+            if (remaining > bytes_in_buffer)
             {
-                fichero_incomp = fichero_aux;
-                mitad = 1;
-                restantes = NBYTES - bescritos;
+                total_written += write(incomplete_fd, data, bytes_in_buffer);
+                remaining -= bytes_in_buffer;
+                bytes_in_buffer = 0;
             }
-            escritos += bescritos;
+            else
+            {
+                total_written += write(incomplete_fd, data, remaining);
+                is_incomplete = 0;
+                bytes_in_buffer -= remaining;
+            }
+        }
+
+        // Mientras queden bytes en el buffer...
+        while (bytes_in_buffer > 0)
+        {
+            // Construimos el nombre del nuevo fichero
+            char file_name[12];
+            sprintf(file_name, "%s%d", file, next_file_id);
+            next_file_id++;
+
+            // Abrimos el fichero
+            current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
+
+            // Si el tamaño en bytes del fichero es mayor que los bytes
+            // que tenemos actualmente en el buffer, el fichero quedará
+            // incompleto y todos los bytes del buffer se consumirán
+            if (NBYTES > bytes_in_buffer)
+            {
+                total_written += write(current_file, data + total_written, bytes_in_buffer);
+                is_incomplete = 1;
+                incomplete_fd = current_file;
+                remaining = NBYTES - bytes_in_buffer;
+                bytes_in_buffer = 0;
+            }
+            else
+            {
+                total_written += write(current_file, data + total_written, NBYTES);
+                bytes_in_buffer -= NBYTES;
+            }
         }
     }
 }
