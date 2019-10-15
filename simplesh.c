@@ -965,6 +965,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(incomplete_fd, data, remaining);
+                fsync(incomplete_fd);
+                close(incomplete_fd);
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
             }
@@ -995,6 +997,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, NBYTES);
+                fsync(current_file);
+                close(current_file);
                 bytes_in_buffer -= NBYTES;
             }
         }
@@ -1071,6 +1075,8 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             else
             {
                 total_written += write(incomplete_fd, data, comprobacion);
+                fsync(incomplete_fd);
+                close(incomplete_fd);
                 is_incomplete = 0;
                 remaining = NLINES;
                 bytes_in_buffer -= comprobacion;
@@ -1100,6 +1106,8 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, comprobacion);
+                fsync(current_file);
+                close(current_file);
                 bytes_in_buffer -= comprobacion;
                 remaining = NLINES;
             }
@@ -1138,17 +1146,17 @@ void run_psplit(struct execcmd* ecmd)
                 break;
 
             case 'h':
-                printf("Uso: psplit [-l NLINES] [-b NBYTES]   [-s BSIZE] [-p PROCS] [FILE1] [FILE2 ]...\n");
+                printf("Uso: %s [-l NLINES] [-b NBYTES] [-s BSIZE] [-p PROCS] [FILE1] [FILE2]...\n", ecmd->argv[0]);
                 printf("     Opciones:\n");
-                printf("     -l NLINES Número máximo de líneas  por  fichero.\n");
-                printf("     -b NBYTES Número máximo de  bytes  por  fichero.\n");
-                printf("     -s BSIZE  Tamaño en bytes  de los  bloques  leídos de [FILEn] o stdin.\n");
-                printf("     -p PROCS  Número máximo de  procesos  simultáneos.\n");
-                printf("     -h        Ayuda\n");
-                break;
+                printf("     -l NLINES Número máximo de líneas por fichero.\n");
+                printf("     -b NBYTES Número máximo de bytes por fichero.\n");
+                printf("     -s BSIZE  Tamaño en bytes de los bloques leídos de [FILEn] o stdin.\n");
+                printf("     -p PROCS  Número máximo de procesos simultáneos.\n");
+                printf("     -h        Ayuda\n\n");
+                return;
 
             default:
-                break;
+                return;
         }
     }
 
@@ -1183,25 +1191,49 @@ void run_psplit(struct execcmd* ecmd)
     int* descriptores[NFILES];
     int x = 0;
 
-    //Obtenemos el nombre de los ficheros
-    for (int i = optind; i < ecmd->argc; i++) 
+    if(NFILES == 0)
     {
-        ficheros[x] = ecmd->argv[i];
-        x++;
-    }
-
-    for(int i = 0; i < NFILES; i++) 
-    {
-        int filedes = open(ecmd->argv[optind], O_RDONLY);
         if(NBYTES != 0) 
         {
-            escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+            escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
         } 
         else if(NLINES != 0)
         {
-            escribir_lineas(filedes, ecmd->argv[optind], NLINES, BSIZE);
+            escribir_lineas(STDIN_FILENO, "stdin", NLINES, BSIZE);
         }
-    } 
+        else 
+        {
+            NBYTES = 1024;
+            escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
+        }
+    }
+    else
+    {
+        //Obtenemos el nombre de los ficheros
+        for (int i = optind; i < ecmd->argc; i++) 
+        {
+            ficheros[x] = ecmd->argv[i];
+            x++;
+        }
+
+        for(int i = 0; i < NFILES; i++) 
+        {
+            int filedes = open(ecmd->argv[optind], O_RDONLY);
+            if(NBYTES != 0) 
+            {
+                escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+            } 
+            else if(NLINES != 0)
+            {
+                escribir_lineas(filedes, ecmd->argv[optind], NLINES, BSIZE);
+            }
+            else 
+            {
+                NBYTES = 1024;
+                escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+            }
+        } 
+    }
     
 }
 //--------------------------
@@ -1564,6 +1596,18 @@ void parse_args(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+    //Bloquear SIGINT
+    sigset_t blocked_signal;
+    sigemptyset(&blocked_signal);
+    sigaddset(&blocked_signal, SIGINT);
+    if(sigprocmask(SIG_BLOCK, &blocked_signal, NULL) == -1)
+    {
+        perror("sigprocmask");
+        exit(EXIT_FAILURE);
+    }
+
+    //Ignorar SIGQUIT
+
 
     if (unsetenv("OLDPWD") != 0) 
     {
