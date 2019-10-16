@@ -1220,18 +1220,18 @@ void run_psplit(struct execcmd* ecmd)
 
         for(int i = 0; i < NFILES; i++) 
         {
-            int filedes = open(ecmd->argv[optind], O_RDONLY);
+            int filedes = open(ficheros[i], O_RDONLY);
             if(NBYTES != 1024) 
             {
-                escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+                escribir_bytes(filedes, ficheros[i], NBYTES, BSIZE);
             } 
             else if(NLINES != 0)
             {
-                escribir_lineas(filedes, ecmd->argv[optind], NLINES, BSIZE);
+                escribir_lineas(filedes, ficheros[i], NLINES, BSIZE);
             }
             else 
             {
-                escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
+                escribir_bytes(filedes, ficheros[i], NBYTES, BSIZE);
             }
         } 
     }
