@@ -965,10 +965,9 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(incomplete_fd, data, remaining);
-                //fsync(incomplete_fd);
-                //close(incomplete_fd);
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
+                close(incomplete_fd);
             }
         }
 
@@ -997,9 +996,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, NBYTES);
-                //fsync(current_file);
-                //close(current_file);
                 bytes_in_buffer -= NBYTES;
+                close(current_file);
             }
         }
     }
