@@ -1277,6 +1277,11 @@ void exec_cmd(struct execcmd* ecmd)
     panic("no se encontró el comando '%s'\n", ecmd->argv[0]);
 }
 
+void handle_sigchld(int sig) {
+  int saved_errno = errno;
+  while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
+  errno = saved_errno;
+}
 
 void run_cmd(struct cmd* cmd)
 {
@@ -1592,20 +1597,56 @@ void parse_args(int argc, char** argv)
     }
 }
 
-
-int main(int argc, char** argv)
+void block_sigint()
 {
-    //Bloquear SIGINT
-    sigset_t blocked_signal;
-    sigemptyset(&blocked_signal);
-    sigaddset(&blocked_signal, SIGINT);
-    if(sigprocmask(SIG_BLOCK, &blocked_signal, NULL) == -1)
+    sigset_t blocked_signals;
+    sigemptyset(&blocked_signals);
+    sigaddset(&blocked_signals, SIGINT);
+
+    if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1)
     {
         perror("sigprocmask");
         exit(EXIT_FAILURE);
     }
+}
 
-    //Ignorar SIGQUIT
+void ignore_sigquit()
+{
+    struct sigaction sa;
+    sa.sa_handler = SIG_IGN;
+    if (sigaction(SIGQUIT, &sa, NULL) == -1)
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void register_sigchld_handler()
+{
+    /* Manejador de señales para SIGCHLD */
+    struct sigaction sa;
+
+    sa.sa_handler = &handle_sigchld;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+
+    if (sigaction(SIGCHLD, &sa, 0) == -1) 
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main(int argc, char** argv)
+{
+    /* Register the SIGCHLD handler */
+    register_sigchld_handler();
+
+    /* Block SIGINT */
+    block_sigint();
+
+    /* Ignore SIGQUIT */
+    ignore_sigquit();
 
 
     if (unsetenv("OLDPWD") != 0) 
