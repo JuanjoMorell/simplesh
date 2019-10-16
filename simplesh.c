@@ -965,8 +965,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(incomplete_fd, data, remaining);
-                fsync(incomplete_fd);
-                close(incomplete_fd);
+                //fsync(incomplete_fd);
+                //close(incomplete_fd);
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
             }
@@ -997,22 +997,23 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, NBYTES);
-                fsync(current_file);
-                close(current_file);
+                //fsync(current_file);
+                //close(current_file);
                 bytes_in_buffer -= NBYTES;
             }
         }
     }
 }
 
-int comprobar_linea(char* DATOS, int escritos, int lineas, int BSIZE)
+int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 {
     int leidas = 0;
     int cont = -1;
-    for(int i = escritos; i<BSIZE; i++)
+    for(int i = escritos; i<bytes_leidos; i++)
     {
         if(DATOS[i] ==  '\n')
         {
+            cont = (i-escritos)+1;
             leidas++;
         }
         if(leidas == lineas)
@@ -1024,10 +1025,10 @@ int comprobar_linea(char* DATOS, int escritos, int lineas, int BSIZE)
     return cont;
 }
 
-int contar_lineas(char* DATOS, int BSIZE)
+int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
 {
     int cont = 0;
-    for (int i = 0; i<BSIZE; i++) 
+    for (int i = escritos; i<escritos+bytes_escribir; i++) 
     {
         if(DATOS[i] == '\n')
         {
@@ -1065,11 +1066,12 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
         // Si el fichero está incompleto
         if (is_incomplete)
         {
-            int comprobacion = comprobar_linea(data, total_written, remaining, BSIZE);
-            if (comprobacion == -1)
+            int comprobacion = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
+            int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
+            if (comprobacion == -1 || lineas_comprobadas < remaining)
             {
                 total_written += write(incomplete_fd, data, bytes_in_buffer);
-                remaining -= contar_lineas(data, BSIZE);
+                remaining -= lineas_comprobadas;
                 bytes_in_buffer = 0;
             }
             else
@@ -1094,13 +1096,14 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             // Abrimos el fichero
             current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
 
-            int comprobacion = comprobar_linea(data, total_written, remaining, BSIZE);
-            if (comprobacion == -1)
+            int comprobacion = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
+            int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
+            if (lineas_comprobadas < remaining)
             {
                 total_written += write(current_file, data + total_written, bytes_in_buffer);
                 is_incomplete = 1;
                 incomplete_fd = current_file;
-                remaining -= contar_lineas(data, BSIZE);
+                remaining -= lineas_comprobadas;
                 bytes_in_buffer = 0;
             }
             else
@@ -1122,7 +1125,7 @@ void run_psplit(struct execcmd* ecmd)
     int MAX_BSIZE = 1048576; //2^20
 
     //Valores por defecto
-    int NLINES = 0, NBYTES = 0, BSIZE = 1024, PROCS = 1;
+    int NLINES = 0, NBYTES = 1024, BSIZE = 1024, PROCS = 1;
 
     //----------------------------------------------------------------------ARGUMENTOS
     while((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1)
@@ -1162,7 +1165,7 @@ void run_psplit(struct execcmd* ecmd)
 
     //------------------------------------------------------------------COMPROBACIONES
     //Comprobar que no esten las opciones -l y -b al mismo tiempo
-    if (NLINES != 0 && NBYTES != 0)
+    if (NLINES != 0 && NBYTES != 1024)
     {
         printf("%s: Opciones incompatibles\n", ecmd->argv[0]);
         return;
@@ -1193,7 +1196,7 @@ void run_psplit(struct execcmd* ecmd)
 
     if(NFILES == 0)
     {
-        if(NBYTES != 0) 
+        if(NBYTES != 1024) 
         {
             escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
         } 
@@ -1203,7 +1206,6 @@ void run_psplit(struct execcmd* ecmd)
         }
         else 
         {
-            NBYTES = 1024;
             escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
         }
     }
@@ -1219,7 +1221,7 @@ void run_psplit(struct execcmd* ecmd)
         for(int i = 0; i < NFILES; i++) 
         {
             int filedes = open(ecmd->argv[optind], O_RDONLY);
-            if(NBYTES != 0) 
+            if(NBYTES != 1024) 
             {
                 escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
             } 
@@ -1229,7 +1231,6 @@ void run_psplit(struct execcmd* ecmd)
             }
             else 
             {
-                NBYTES = 1024;
                 escribir_bytes(filedes, ecmd->argv[optind], NBYTES, BSIZE);
             }
         } 
