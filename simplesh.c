@@ -965,6 +965,7 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(incomplete_fd, data, remaining);
+                //fsync(incomplete_fd);
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
                 close(incomplete_fd);
@@ -975,7 +976,7 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
         while (bytes_in_buffer > 0)
         {
             // Construimos el nombre del nuevo fichero
-            char file_name[12];
+            char file_name[32];
             sprintf(file_name, "%s%d", file, next_file_id);
             next_file_id++;
 
@@ -996,6 +997,7 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, NBYTES);
+                //fsync(current_file);
                 bytes_in_buffer -= NBYTES;
                 close(current_file);
             }
@@ -1087,7 +1089,7 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
         while (bytes_in_buffer > 0)
         {
             // Construimos el nombre del nuevo fichero
-            char file_name[12];
+            char file_name[32];
             sprintf(file_name, "%s%d", file, next_file_id);
             next_file_id++;
 
@@ -1120,32 +1122,24 @@ void run_psplit(struct execcmd* ecmd)
 {
     int opt;
     optind = 1;
-    int MAX_BSIZE = 1048576; //2^20
 
-    //Valores por defecto
-    int NLINES = 0, NBYTES = 1024, BSIZE = 1024, PROCS = 1;
+    /* Tamaño máximo del buffer */
+    static int MAX_BSIZE = 1048576;
 
-    //----------------------------------------------------------------------ARGUMENTOS
-    while((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1)
+    /* Valores por defecto */
+    int NLINES  = 0;
+    int BSIZE   = 1024;
+    int PROCS   = 1;
+    int NBYTES  = 1024;
+    
+    while ((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1)
     {
         switch (opt)
         {
-            case 'l':
-                NLINES = atoi(optarg);
-                break;
-        
-            case 'b':
-                NBYTES = atoi(optarg);
-                break;
-        
-            case 's':
-                BSIZE = atoi(optarg);
-                break;
-
-            case 'p':
-                PROCS = atoi(optarg);
-                break;
-
+            case 'l': { NLINES = atoi(optarg); break; }
+            case 'b': { NBYTES = atoi(optarg); break; }
+            case 's': { BSIZE  = atoi(optarg); break; }
+            case 'p': { PROCS  = atoi(optarg); break; }
             case 'h':
                 printf("Uso: %s [-l NLINES] [-b NBYTES] [-s BSIZE] [-p PROCS] [FILE1] [FILE2]...\n", ecmd->argv[0]);
                 printf("     Opciones:\n");
@@ -1157,91 +1151,141 @@ void run_psplit(struct execcmd* ecmd)
                 return;
 
             default:
+                printf("Uso: %s [-l NLINES] [-b NBYTES] [-s BSIZE] [-p PROCS] [FILE1] [FILE2]...\n", ecmd->argv[0]);
                 return;
-        }
+        }   
     }
 
-    //------------------------------------------------------------------COMPROBACIONES
-    //Comprobar que no esten las opciones -l y -b al mismo tiempo
     if (NLINES != 0 && NBYTES != 1024)
     {
         printf("%s: Opciones incompatibles\n", ecmd->argv[0]);
         return;
     }
 
-    //Comprobar BSIZE
-    if(BSIZE < 1 || BSIZE > MAX_BSIZE) 
+    if (BSIZE < 1 || BSIZE > MAX_BSIZE)
     {
         printf("%s: Opción -s no válida\n", ecmd->argv[0]);
-        return;
+        return;   
     }
 
-    //Comprobar PROCS
-    if(PROCS < 1)
+    if (PROCS < 1)
     {
         printf("%s: Opción -p no válida\n", ecmd->argv[0]);
         return;
     }
 
-    //-----------------------------------------------TRATAMIENTO DE LOS FICHEROS
-    //Nombre de los ficheros
-    int NFILES = ecmd->argc - optind;
-    //Nombre de los ficheros
-    char* ficheros[NFILES];
-    //Descriptores de los ficheros
-    int* descriptores[NFILES];
-    int x = 0;
+    /*
+     * fork(psplit(f1); fork(psplit(f2)); ... ; fork(psplit(fn)))
+     * Hacer tantos fork como se pueda (depende de NPROCS)
+     * Una vez que no se puedan procesar más ficheros pero aún queden
+     * ficheros por procesar, habrá que esperar a que acabe el más
+     * antigüo.
+     *
+     * Almacenar los PID de los procesos que se lanzan para saber si ha
+     * finalizado el más antigüo.
+     *
+     * Si no quedan más ficheros se finaliza el bucle y se espera (wait())
+     * a los procesos en vuelo.
+     */
 
-    if(NFILES == 0)
+    int num_files = ecmd->argc - optind;
+    char* file_names[num_files];
+
+    /* Almacenar nombre de los ficheros. */
+    for (int i = optind, index = 0; i < ecmd->argc; i++, index++)
+        file_names[index] = ecmd->argv[i];
+
+    // Si no hay ficheros, leer de la entrada estándar
+    if (num_files == 0)
     {
-        if(NBYTES != 1024) 
+        if (NBYTES != 1024) escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
+        else if (NLINES != 0) escribir_lineas(STDIN_FILENO, "stdin", NLINES, BSIZE);
+        else escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
+    }
+    else if (PROCS > 1)
+    {
+        int pid;                    /* PID del proceso hijo */
+        int num_children = 0;       /* Contador de hijos creados */
+        int procesos_en_vuelo = 0;  /* Número de procesos corriendo al mismo tiempo */
+        int running_pids[PROCS];    /* PIDs de los procesos ejecutándose */
+        int oldest_pid;             /* */
+        int status;
+        int procesos_terminados = 0;
+
+        // Mientras no se hayan creado tantos procesos hijo como
+        // ficheros hay que procesar...
+        while (num_children < num_files)
         {
-            escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
-        } 
-        else if(NLINES != 0)
-        {
-            escribir_lineas(STDIN_FILENO, "stdin", NLINES, BSIZE);
+            // Si no se ha alcanzado PROCS, crear un nuevo proceso...
+            while (procesos_en_vuelo < PROCS)
+            {
+                int pid = fork();
+                // CHILD execution.
+                if (pid == 0)
+                {
+                    int fd = open(file_names[num_children], O_RDONLY);
+                    if (NBYTES != 1024) escribir_bytes(fd, file_names[num_children], NBYTES, BSIZE);
+                    else if (NLINES != 0) escribir_lineas(fd, file_names[num_children], NLINES, BSIZE);
+                    else escribir_bytes(fd, file_names[num_children], NBYTES, BSIZE);
+                    exit(EXIT_SUCCESS);
+                }
+                // PARENT execution.
+                // Almacenar PID del proceso creado. 
+                for (int i = 0; i < PROCS; i++)
+                    if (!running_pids[i]) { running_pids[i] = pid; break; }
+                
+                // Actualizar variables de control. 
+                num_children++;
+                procesos_en_vuelo++;
+                
+                if(procesos_en_vuelo == num_files) break;
+
+            }
+            
+            // Esperar al proceso más antigüo...
+            oldest_pid = running_pids[0];
+            for(int i = 0; i < PROCS; i++) {
+                if ( running_pids[i] < oldest_pid ) 
+                {
+                    oldest_pid = running_pids[i];
+                }
+            }
+
+            int ret;
+            if ((ret = waitpid(oldest_pid, &status, 0)) > 0)
+            {
+                for (int i = 0; i < PROCS; i++)
+                {
+                    if (ret == running_pids[i])
+                    {
+                        running_pids[i] = 0;
+                        procesos_en_vuelo--;
+                        procesos_terminados++;
+                        break;
+                    }
+                }
+            }
+            
         }
-        else 
+
+        for(int i = 0; i < num_children-procesos_terminados; i++)
         {
-            escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
+            int hijo = waitpid(-1, &status, 0);
         }
+
     }
     else
     {
-        //Obtenemos el nombre de los ficheros
-        for (int i = optind; i < ecmd->argc; i++) 
+        for (int i = 0; i < num_files; i++)
         {
-            ficheros[x] = ecmd->argv[i];
-            x++;
+            int fd = open(file_names[i], O_RDONLY);
+            if (NBYTES != 1024) escribir_bytes(fd, file_names[i], NBYTES, BSIZE);
+            else if (NLINES != 0) escribir_lineas(fd, file_names[i], NLINES, BSIZE);
+            else escribir_bytes(fd, file_names[i], NBYTES, BSIZE);
         }
-
-        for(int i = 0; i < NFILES; i++) 
-        {
-            int filedes = open(ficheros[i], O_RDONLY);
-            if(NBYTES != 1024) 
-            {
-                escribir_bytes(filedes, ficheros[i], NBYTES, BSIZE);
-            } 
-            else if(NLINES != 0)
-            {
-                escribir_lineas(filedes, ficheros[i], NLINES, BSIZE);
-            }
-            else 
-            {
-                escribir_bytes(filedes, ficheros[i], NBYTES, BSIZE);
-            }
-        } 
     }
-    
 }
-//--------------------------
-//No se lee todo del tiron, ni byte a byte
-//Se le c o b bytes en streaming
-//Escribir el numero maximo de bytes posibles
-//--------------------------
-//Funcion para las escrituras parciales:
-//write(fd, buf, 1024) -> 512; write(fd, buf+512, 1024-512) -> 256; write(fd, buf+512+256, 1024-512-256)...
+
 //--------------------------
 // ESTO SE IGNORA HASTA QUE PSPLIT FUNCIONE SIN PARALELOS
 // -f -n 5 f1 f2 f3 -> fork(psplit(f1)); fork(psplit(f2)) -> Tantos fork que puedan hacerse dependiendo de PROCS, y se espera al mas
@@ -1293,6 +1337,7 @@ void run_cmd(struct cmd* cmd)
     struct subscmd* scmd;
     int p[2];
     int fd;
+    int pid, status;
 
     DPRINTF(DBG_TRACE, "STR\n");
 
@@ -1639,15 +1684,16 @@ void register_sigchld_handler()
 
 int main(int argc, char** argv)
 {
-    /* Register the SIGCHLD handler */
+    /*
+    // Register the SIGCHLD handler 
     register_sigchld_handler();
 
-    /* Block SIGINT */
+    // Block SIGINT 
     block_sigint();
 
-    /* Ignore SIGQUIT */
+    // Ignore SIGQUIT 
     ignore_sigquit();
-
+    */
 
     if (unsetenv("OLDPWD") != 0) 
     {
