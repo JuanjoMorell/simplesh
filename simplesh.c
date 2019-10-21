@@ -87,14 +87,18 @@ static int g_dbg_level = 0;
 // Número máximo de argumentos de un comando
 #define MAX_ARGS 16
 // Número de comandos internos
-#define NUM_INTERNAL_CMDS 4
+#define NUM_INTERNAL_CMDS 5
+// Número de pids en segundo plano máximo
+#define NUM_BG_PIDS 8
 
 // Delimitadores
 static const char WHITESPACE[] = " \t\r\n\v";
 // Caracteres especiales
 static const char SYMBOLS[] = "<|>&;()";
 //Comando internos
-static const char *INTERNAL_COMMANDS[] = {"exit", "cwd", "cd", "psplit"};
+static const char *INTERNAL_COMMANDS[] = {"exit", "cwd", "cd", "psplit", "bjobs"};
+//PID en segundo plano
+int BG_PIDS[NUM_BG_PIDS] = {0};
 
 /******************************************************************************
  * Funciones auxiliares
@@ -1038,7 +1042,6 @@ int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
     return cont;
 }
 
-// FALTA: DIVIDIR EN MAS DE UNA LINEA, ULTIMO FICHERO TERMINE BIEN
 void escribir_lineas(int fd, char* file, int NLINES, int BSIZE) 
 {
     char data[BSIZE]; // Data buffer
@@ -1286,12 +1289,41 @@ void run_psplit(struct execcmd* ecmd)
     }
 }
 
-//--------------------------
-// ESTO SE IGNORA HASTA QUE PSPLIT FUNCIONE SIN PARALELOS
-// -f -n 5 f1 f2 f3 -> fork(psplit(f1)); fork(psplit(f2)) -> Tantos fork que puedan hacerse dependiendo de PROCS, y se espera al mas
-// antiguo wait(f1) -> necesario almacenar los pid para saber si termina el proceso mas antiguo -> array de pid.
-// Si no hay mas ficheros se finaliza el bucle y se hace un wait() para los procesos que estan en vuelo
-//--------------------------
+void run_bjobs(struct execcmd* ecmd)
+{
+    int opt;
+    optind = 1;
+
+    while ((opt = getopt(ecmd->argc, ecmd->argv, "kh")) != -1)
+    {
+        switch (opt)
+        {
+            case 'k':
+                //Matamos a todos los procesos en segundo plano
+                for(int i = 0; i<NUM_BG_PIDS; i++){
+                if(BG_PIDS[i])
+                    kill(BG_PIDS[i], SIGKILL);
+                }
+                return;
+            case 'h':
+                printf("Uso: %s [-k] [-h]\n", ecmd->argv[0]);
+                printf("     Opciones:\n");
+                printf("     -k Mata todos los procesos en segundo plano.\n");
+                printf("     -h Ayuda\n");
+                return;
+
+            default:
+                return;
+        }   
+    }   
+
+    //Mostramos los procesos que estan en segundo plano
+    for(int i = 0; i<NUM_BG_PIDS; i++){
+        if(BG_PIDS[i])
+            printf("[%d]\n", BG_PIDS[i]);
+    }
+
+}
 
 void run_internal_cmd(struct execcmd* ecmd) 
 {
@@ -1303,12 +1335,12 @@ void run_internal_cmd(struct execcmd* ecmd)
 	    else run_cd(ecmd->argv[1]);
 	}
     else if (strcmp(ecmd->argv[0], "psplit") == 0) run_psplit(ecmd);
+    else if (strcmp(ecmd->argv[0], "bjobs") == 0) run_bjobs(ecmd);
 }
 
 /******************************************************************************
  * Funciones para la ejecución de la línea de órdenes
  ******************************************************************************/
-
 
 void exec_cmd(struct execcmd* ecmd)
 {
@@ -1321,10 +1353,53 @@ void exec_cmd(struct execcmd* ecmd)
     panic("no se encontró el comando '%s'\n", ecmd->argv[0]);
 }
 
-void handle_sigchld(int sig) {
-  int saved_errno = errno;
-  while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
-  errno = saved_errno;
+void handle_sigchld(int sig) 
+{
+    int saved_errno = errno;
+    int pid;
+    while ((pid = waitpid(-1, 0, WNOHANG)) > 0) 
+    {
+        for(int i = 0; i<NUM_BG_PIDS; i++)
+        {
+            if(BG_PIDS[i] == pid) 
+            {
+                BG_PIDS[i] = 0;
+
+                //Imprimimos por STDOUT el pid que ha finalizado
+                char buf[12];
+                sprintf(buf, "[%d]", pid);
+                write(STDOUT_FILENO, buf, strlen(buf));
+                break;
+            }
+        }       
+    }
+    errno = saved_errno;
+}
+
+void block_sigchld()
+{
+    struct sigaction sa;
+    memset(&sa.sa_flags, 0, sizeof(int));
+    sa.sa_handler = SIG_DFL;
+
+    if(sigaction(SIGCHLD, &sa, 0) == -1)
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void unblock_sigchld()
+{
+    struct sigaction sa;
+    memset(&sa.sa_flags, 0, sizeof(int));
+    sa.sa_handler = &handle_sigchld;
+
+    if(sigaction(SIGCHLD, &sa, 0) == -1)
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void run_cmd(struct cmd* cmd)
@@ -1338,6 +1413,8 @@ void run_cmd(struct cmd* cmd)
     int p[2];
     int fd;
     int pid, status;
+    int pidD, pidI;
+    sigset_t mask_all, mask_one, prev_one;
 
     DPRINTF(DBG_TRACE, "STR\n");
 
@@ -1351,9 +1428,9 @@ void run_cmd(struct cmd* cmd)
 	    	if (is_internal_cmd(ecmd->argv[0]) == 1) {
 	    		run_internal_cmd(ecmd);
 	    	} else {
-            	if (fork_or_panic("fork EXEC") == 0)
+            	if ((pid = fork_or_panic("fork EXEC")) == 0)
                 	exec_cmd(ecmd);
-            	TRY( wait(NULL) );
+            	TRY( waitpid(pid, &status, 0) );
 	    	}
             break;
 
@@ -1379,7 +1456,7 @@ void run_cmd(struct cmd* cmd)
                     break;
                 }
             }
-            if (fork_or_panic("fork REDR") == 0)
+            if ((pid = fork_or_panic("fork REDR")) == 0)
             {
                 TRY( close(rcmd->fd) );
                 if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0)
@@ -1393,7 +1470,7 @@ void run_cmd(struct cmd* cmd)
                     run_cmd(rcmd->cmd);
                 exit(EXIT_SUCCESS);
             }
-            TRY( wait(NULL) );
+            TRY( waitpid(pid, &status, 0) );
             break;
 
         case LIST:
@@ -1404,6 +1481,7 @@ void run_cmd(struct cmd* cmd)
 
         case PIPE:
             pcmd = (struct pipecmd*)cmd;
+
             if (pipe(p) < 0)
             {
                 perror("pipe");
@@ -1411,7 +1489,8 @@ void run_cmd(struct cmd* cmd)
             }
 
             // Ejecución del hijo de la izquierda
-            if (fork_or_panic("fork PIPE left") == 0)
+            block_sigchld();
+            if ((pidI = fork_or_panic("fork PIPE left")) == 0)
             {
                 TRY( close(STDOUT_FILENO) );
                 TRY( dup(p[1]) );
@@ -1429,7 +1508,7 @@ void run_cmd(struct cmd* cmd)
             }
 
             // Ejecución del hijo de la derecha
-            if (fork_or_panic("fork PIPE right") == 0)
+            if ((pidD = fork_or_panic("fork PIPE right")) == 0)
             {
                 TRY( close(STDIN_FILENO) );
                 TRY( dup(p[0]) );
@@ -1450,14 +1529,23 @@ void run_cmd(struct cmd* cmd)
             TRY( close(p[1]) );
 
             // Esperar a ambos hijos
-            TRY( wait(NULL) );
-            TRY( wait(NULL) );
+            TRY( waitpid(pidI, &status, 0) );
+            TRY( waitpid(pidD, &status, 0) );
+            unblock_sigchld();
             break;
 
         case BACK:
+
+            sigfillset(&mask_all);
+            sigemptyset(&mask_one);
+            sigaddset(&mask_one, SIGCHLD);
+
             bcmd = (struct backcmd*)cmd;
-            if (fork_or_panic("fork BACK") == 0)
-            {
+
+            sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
+            if ((pid = fork_or_panic("fork BACK")) == 0)
+            {   
+                sigprocmask(SIG_SETMASK, &prev_one, NULL);
                 if (bcmd->cmd->type == EXEC) {
                     ecmd = ((struct execcmd*) bcmd->cmd);
                     if (is_internal_cmd(ecmd->argv[0]) == 1)
@@ -1469,15 +1557,28 @@ void run_cmd(struct cmd* cmd)
 
                 exit(EXIT_SUCCESS);
             }
+            printf("[%d]\n", pid);
+
+            sigprocmask(SIG_BLOCK, &mask_all, NULL);
+            for(int i = 0; i<NUM_BG_PIDS; i++) 
+            {
+                if(!BG_PIDS[i]) 
+                {
+                    BG_PIDS[i] = pid;
+                    break;
+                }
+            }
+            sigprocmask(SIG_SETMASK, &prev_one, NULL);
+
             break;
 
         case SUBS:
             scmd = (struct subscmd*) cmd;
-            if (fork_or_panic("fork SUBS") == 0) {
+            if ((pid =fork_or_panic("fork SUBS")) == 0) {
                 run_cmd(scmd->cmd);
                 exit(EXIT_SUCCESS);
             }
-            TRY( wait(NULL) );
+            TRY( waitpid(pid, &status, 0) );
             break;
 
         case INV:
@@ -1670,6 +1771,7 @@ void register_sigchld_handler()
 {
     /* Manejador de señales para SIGCHLD */
     struct sigaction sa;
+    memset(&sa.sa_flags, 0, sizeof(int));
 
     sa.sa_handler = &handle_sigchld;
     sigemptyset(&sa.sa_mask);
@@ -1684,7 +1786,6 @@ void register_sigchld_handler()
 
 int main(int argc, char** argv)
 {
-    /*
     // Register the SIGCHLD handler 
     register_sigchld_handler();
 
@@ -1693,8 +1794,7 @@ int main(int argc, char** argv)
 
     // Ignore SIGQUIT 
     ignore_sigquit();
-    */
-
+    
     if (unsetenv("OLDPWD") != 0) 
     {
         perror("unset error");
@@ -1702,7 +1802,6 @@ int main(int argc, char** argv)
     }
 
     char* buf;
-
 
     parse_args(argc, argv);
 
