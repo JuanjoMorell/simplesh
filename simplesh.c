@@ -837,33 +837,43 @@ void free_cmd(struct cmd* cmd)
  ******************************************************************************/
 
 
-//Manejador de señales SIGCHLD
+void deletejob(int pid)
+{
+    for (int i = 0; i<NUM_BG_PIDS; i++)
+    {
+        if ( BG_PIDS[i] == pid ) 
+        {
+            // Eliminamos el pid de los procesos en segundo plano
+            BG_PIDS[i] = 0;
+            break;
+        }
+    }
+}
+
+
+// Manejador de señales SIGCHLD
 void handle_sigchld(int sig) 
 {
     int saved_errno = errno;
     int pid;
     while ((pid = waitpid(-1, 0, WNOHANG)) > 0) 
     {
-        for (int i = 0; i<NUM_BG_PIDS; i++)
+        // Imprimimos por STDOUT el pid que ha finalizado
+        char buf[12];
+        sprintf(buf, "[%d]", pid);
+        if ( write(STDOUT_FILENO, buf, strlen(buf)) == -1 )
         {
-            if ( BG_PIDS[i] == pid ) 
-            {
-                //Eliminamos el pid de los procesos en segundo plano
-                BG_PIDS[i] = 0;
-
-                //Imprimimos por STDOUT el pid que ha finalizado
-                char buf[12];
-                sprintf(buf, "[%d]", pid);
-                write(STDOUT_FILENO, buf, strlen(buf));
-                break;
-            }
-        }       
+            perror("write");
+            exit(EXIT_FAILURE);
+        }
+        
+        deletejob(pid);           
     }
     errno = saved_errno;
 }
 
 
-//Bloquear señales SIGCHLD
+// Bloquear señales SIGCHLD
 void block_sigchld()
 {
     struct sigaction sa;
@@ -878,7 +888,7 @@ void block_sigchld()
 }
 
 
-//Desbloquear señales SIGCHLD
+// Desbloquear señales SIGCHLD
 void unblock_sigchld()
 {
     struct sigaction sa;
@@ -898,7 +908,7 @@ void unblock_sigchld()
  ******************************************************************************/
 
 
-//Comprobar si un comando es interno
+// Comprobar si un comando es interno
 int is_internal_cmd(char* cmd_name)
 {
     if ( cmd_name == NULL ) 
@@ -913,7 +923,7 @@ int is_internal_cmd(char* cmd_name)
 }
 
 
-//Comando CWD
+// Comando CWD
 void run_cwd()
 {
 
@@ -928,7 +938,7 @@ void run_cwd()
 }
 
 
-//Comando EXIT
+// Comando EXIT
 void run_exit() 
 { 
     free_cmd(cmd);
@@ -936,7 +946,7 @@ void run_exit()
 }
 
 
-//Comando CD
+// Comando CD
 void run_cd(char* path)
 {
     char cwd[PATH_MAX];
@@ -1002,7 +1012,7 @@ void run_cd(char* path)
 }
 
 
-//Función complementaria a PSPLIT para la opcion -b
+// Función complementaria a PSPLIT para la opcion -b
 void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
 {
     char data[BSIZE]; // Data buffer
@@ -1147,7 +1157,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
 }
 
 
-//Funcion complementaria a PSPLIT para la opcion -l
+// Función complementaria a PSPLIT para la opción -l
+// Devuelve el número de bytes que tiene que escribir dicha opción
 int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 {
     int leidas = 0;
@@ -1169,6 +1180,8 @@ int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 }
 
 
+// Función complementaria a PSPLIT para la opción -l
+// Devuelve el número de lineas existen entre los bytes que vamos a escribir
 int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
 {
     int cont = 0;
@@ -1183,6 +1196,7 @@ int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
 }
 
 
+// Función complementaria a PSPLIT para la opción -l
 void escribir_lineas(int fd, char* file, int NLINES, int BSIZE) 
 {
     char data[BSIZE]; // Data buffer
@@ -1329,6 +1343,7 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
 }
 
 
+// Comando PSPLIT
 void run_psplit(struct execcmd* ecmd)
 {
     int opt;
@@ -1533,6 +1548,7 @@ void run_psplit(struct execcmd* ecmd)
 }
 
 
+// Comando BJOBS
 void run_bjobs(struct execcmd* ecmd)
 {
     int opt;
@@ -1543,7 +1559,7 @@ void run_bjobs(struct execcmd* ecmd)
         switch (opt)
         {
             case 'k':
-                //Matamos a todos los procesos en segundo plano
+                // Matamos a todos los procesos en segundo plano
                 for(int i = 0; i<NUM_BG_PIDS; i++){
                 if(BG_PIDS[i])
                     if ( kill(BG_PIDS[i], SIGKILL) == -1)
@@ -1565,13 +1581,14 @@ void run_bjobs(struct execcmd* ecmd)
         }   
     }   
 
-    //Mostramos los procesos que estan en segundo plano
+    // Mostramos los procesos que estan en segundo plano
     for(int i = 0; i<NUM_BG_PIDS; i++){
         if(BG_PIDS[i])
             printf("[%d]\n", BG_PIDS[i]);
     }
 
 }
+
 
 void run_internal_cmd(struct execcmd* ecmd) 
 {
@@ -1586,9 +1603,11 @@ void run_internal_cmd(struct execcmd* ecmd)
     else if (strcmp(ecmd->argv[0], "bjobs") == 0) run_bjobs(ecmd);
 }
 
+
 /******************************************************************************
  * Funciones para la ejecución de la línea de órdenes
  ******************************************************************************/
+
 
 void exec_cmd(struct execcmd* ecmd)
 {
@@ -1600,6 +1619,7 @@ void exec_cmd(struct execcmd* ecmd)
 
     panic("no se encontró el comando '%s'\n", ecmd->argv[0]);
 }
+
 
 void run_cmd(struct cmd* cmd)
 {
@@ -1623,6 +1643,7 @@ void run_cmd(struct cmd* cmd)
     {
         case EXEC:
             ecmd = (struct execcmd*) cmd;
+
 	    	//Comprobacion de si es comando interno o externo
 	    	if (is_internal_cmd(ecmd->argv[0]) == 1) {
 	    		run_internal_cmd(ecmd);
@@ -1713,7 +1734,8 @@ void run_cmd(struct cmd* cmd)
                 TRY( dup(p[0]) );
                 TRY( close(p[0]) );
                 TRY( close(p[1]) );
-				//Comprobar si es interno
+
+				// Comprobar si es interno
                 if (pcmd->right->type == EXEC) {
                     ecmd = ((struct execcmd*) pcmd->right);
                     if (is_internal_cmd(ecmd->argv[0]) == 1)
@@ -1907,6 +1929,7 @@ char* get_cmd()
     return buf;
 }
 
+
 /******************************************************************************
  * Bucle principal de `simplesh`
  ******************************************************************************/
@@ -1942,6 +1965,8 @@ void parse_args(int argc, char** argv)
     }
 }
 
+
+// Bloquea la señal SIGINT
 void block_sigint()
 {
     sigset_t blocked_signals;
@@ -1955,6 +1980,8 @@ void block_sigint()
     }
 }
 
+
+// Ignora la señal SIGQUIT
 void ignore_sigquit()
 {
     struct sigaction sa;
@@ -1966,6 +1993,8 @@ void ignore_sigquit()
     }
 }
 
+
+// Creación del manejador de señales para la señal SIGCHLD
 void register_sigchld_handler()
 {
     /* Manejador de señales para SIGCHLD */
@@ -1982,6 +2011,7 @@ void register_sigchld_handler()
         exit(EXIT_FAILURE);
     }
 }
+
 
 int main(int argc, char** argv)
 {
