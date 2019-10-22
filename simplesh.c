@@ -93,12 +93,16 @@ static int g_dbg_level = 0;
 
 // Delimitadores
 static const char WHITESPACE[] = " \t\r\n\v";
+
 // Caracteres especiales
 static const char SYMBOLS[] = "<|>&;()";
+
 //Comando internos
 static const char *INTERNAL_COMMANDS[] = {"exit", "cwd", "cd", "psplit", "bjobs"};
+
 //PID en segundo plano
 int BG_PIDS[NUM_BG_PIDS] = {0};
+
 
 /******************************************************************************
  * Funciones auxiliares
@@ -784,7 +788,6 @@ void free_cmd(struct cmd* cmd)
             rcmd = (struct redrcmd*) cmd;
             free_cmd(rcmd->cmd);
 
-            //free(rcmd->cmd);
             free(rcmd);
             break;
 
@@ -794,8 +797,6 @@ void free_cmd(struct cmd* cmd)
             free_cmd(lcmd->left);
             free_cmd(lcmd->right);
 
-            //free(lcmd->right);
-            //free(lcmd->left);
             free(lcmd);
             break;
 
@@ -805,8 +806,6 @@ void free_cmd(struct cmd* cmd)
             free_cmd(pcmd->left);
             free_cmd(pcmd->right);
 
-            //free(pcmd->right);
-            //free(pcmd->left);
             free(pcmd);
             break;
 
@@ -815,7 +814,6 @@ void free_cmd(struct cmd* cmd)
 
             free_cmd(bcmd->cmd);
 
-            //free(bcmd->cmd);
             free(bcmd);
             break;
 
@@ -824,7 +822,6 @@ void free_cmd(struct cmd* cmd)
 
             free_cmd(scmd->cmd);
 
-            //free(scmd->cmd);
             free(scmd);
             break;
 
@@ -832,7 +829,6 @@ void free_cmd(struct cmd* cmd)
         default:
             panic("%s: estructura `cmd` desconocida\n", __func__);
     }
-    // free(cmd);
 }
 
 
@@ -840,11 +836,75 @@ void free_cmd(struct cmd* cmd)
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
+
+//Manejador de señales SIGCHLD
+void handle_sigchld(int sig) 
+{
+    int saved_errno = errno;
+    int pid;
+    while ((pid = waitpid(-1, 0, WNOHANG)) > 0) 
+    {
+        for (int i = 0; i<NUM_BG_PIDS; i++)
+        {
+            if ( BG_PIDS[i] == pid ) 
+            {
+                //Eliminamos el pid de los procesos en segundo plano
+                BG_PIDS[i] = 0;
+
+                //Imprimimos por STDOUT el pid que ha finalizado
+                char buf[12];
+                sprintf(buf, "[%d]", pid);
+                write(STDOUT_FILENO, buf, strlen(buf));
+                break;
+            }
+        }       
+    }
+    errno = saved_errno;
+}
+
+
+//Bloquear señales SIGCHLD
+void block_sigchld()
+{
+    struct sigaction sa;
+    memset(&sa.sa_flags, 0, sizeof(int));
+    sa.sa_handler = SIG_DFL;
+
+    if( sigaction(SIGCHLD, &sa, 0) == -1 )
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+
+//Desbloquear señales SIGCHLD
+void unblock_sigchld()
+{
+    struct sigaction sa;
+    memset(&sa.sa_flags, 0, sizeof(int));
+    sa.sa_handler = &handle_sigchld;
+
+    if( sigaction(SIGCHLD, &sa, 0) == -1 )
+    {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+}
+
+
+/******************************************************************************
+ * Comandos internos de `simplesh`
+ ******************************************************************************/
+
+
+//Comprobar si un comando es interno
 int is_internal_cmd(char* cmd_name)
 {
-    if (cmd_name == NULL) return 0;
+    if ( cmd_name == NULL ) 
+        return 0;
 
-    for(int i = 0; i < NUM_INTERNAL_CMDS; i++) {
+    for (int i = 0; i < NUM_INTERNAL_CMDS; i++) {
         if(strcmp(INTERNAL_COMMANDS[i], cmd_name) == 0)
             return 1;
     }
@@ -852,6 +912,8 @@ int is_internal_cmd(char* cmd_name)
     return 0;
 }
 
+
+//Comando CWD
 void run_cwd()
 {
 
@@ -865,12 +927,16 @@ void run_cwd()
     printf("cwd: %s\n", path);
 }
 
+
+//Comando EXIT
 void run_exit() 
 { 
     free_cmd(cmd);
-    exit(0); 
+    exit(EXIT_SUCCESS); 
 }
 
+
+//Comando CD
 void run_cd(char* path)
 {
     char cwd[PATH_MAX];
@@ -891,7 +957,7 @@ void run_cd(char* path)
                 //Cambiamos al directorio HOME
                 perror("chdir");
                 exit(EXIT_FAILURE);
-            }
+            } 
 		    if (setenv("OLDPWD", cwd, 1) == -1)
             {
                 //Actualizamos la variable de entorno OLDPWD
@@ -924,14 +990,19 @@ void run_cd(char* path)
     // cd dir
     else {
         if (chdir(path) == -1) printf("run_cd: No existe el directorio '%s'\n", path);
-        if(setenv("OLDPWD", cwd, 1) == -1) 
-        {
-            perror("setenv");
-            exit(EXIT_FAILURE);
+        else 
+        {   
+            if(setenv("OLDPWD", cwd, 1) == -1) 
+            {
+                perror("setenv");
+                exit(EXIT_FAILURE);
+            }
         }
 	}
 }
 
+
+//Función complementaria a PSPLIT para la opcion -b
 void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
 {
     char data[BSIZE]; // Data buffer
@@ -948,6 +1019,12 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
     // Leer mientras el fichero no esté vacío.
     while ((read_from_source = read(fd, data, BSIZE)) != 0)
     {
+        if ( read_from_source == -1 )
+        {
+            perror("read");
+            exit(EXIT_FAILURE);
+        }
+
         bytes_in_buffer = read_from_source;
         // Actúa como puntero al buffer de bytes, cada vez que escribamos
         // bytes del buffer en el fichero, se sumará el número de bytes
@@ -962,17 +1039,36 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             // Si faltan más bytes por escribir de los que hay en el buffer
             if (remaining > bytes_in_buffer)
             {
-                total_written += write(incomplete_fd, data, bytes_in_buffer);
+                int aux = write(incomplete_fd, data, bytes_in_buffer);
+                
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
                 remaining -= bytes_in_buffer;
                 bytes_in_buffer = 0;
             }
             else
             {
-                total_written += write(incomplete_fd, data, remaining);
-                //fsync(incomplete_fd);
+                int aux = write(incomplete_fd, data, remaining);
+
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
+
+                fsync(incomplete_fd);
+                close(incomplete_fd);
+                
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
-                close(incomplete_fd);
+                
             }
         }
 
@@ -1001,9 +1097,12 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             else
             {
                 total_written += write(current_file, data + total_written, NBYTES);
-                //fsync(current_file);
-                bytes_in_buffer -= NBYTES;
+                
+                fsync(current_file);
                 close(current_file);
+
+                bytes_in_buffer -= NBYTES;
+                
             }
         }
     }
@@ -1207,6 +1306,7 @@ void run_psplit(struct execcmd* ecmd)
     }
     else if (PROCS > 1)
     {
+        block_sigchld();
         int pid;                    /* PID del proceso hijo */
         int num_children = 0;       /* Contador de hijos creados */
         int procesos_en_vuelo = 0;  /* Número de procesos corriendo al mismo tiempo */
@@ -1275,7 +1375,7 @@ void run_psplit(struct execcmd* ecmd)
         {
             int hijo = waitpid(-1, &status, 0);
         }
-
+        unblock_sigchld();
     }
     else
     {
@@ -1351,55 +1451,6 @@ void exec_cmd(struct execcmd* ecmd)
     execvp(ecmd->argv[0], ecmd->argv);
 
     panic("no se encontró el comando '%s'\n", ecmd->argv[0]);
-}
-
-void handle_sigchld(int sig) 
-{
-    int saved_errno = errno;
-    int pid;
-    while ((pid = waitpid(-1, 0, WNOHANG)) > 0) 
-    {
-        for(int i = 0; i<NUM_BG_PIDS; i++)
-        {
-            if(BG_PIDS[i] == pid) 
-            {
-                BG_PIDS[i] = 0;
-
-                //Imprimimos por STDOUT el pid que ha finalizado
-                char buf[12];
-                sprintf(buf, "[%d]", pid);
-                write(STDOUT_FILENO, buf, strlen(buf));
-                break;
-            }
-        }       
-    }
-    errno = saved_errno;
-}
-
-void block_sigchld()
-{
-    struct sigaction sa;
-    memset(&sa.sa_flags, 0, sizeof(int));
-    sa.sa_handler = SIG_DFL;
-
-    if(sigaction(SIGCHLD, &sa, 0) == -1)
-    {
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void unblock_sigchld()
-{
-    struct sigaction sa;
-    memset(&sa.sa_flags, 0, sizeof(int));
-    sa.sa_handler = &handle_sigchld;
-
-    if(sigaction(SIGCHLD, &sa, 0) == -1)
-    {
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
 }
 
 void run_cmd(struct cmd* cmd)
