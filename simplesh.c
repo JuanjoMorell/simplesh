@@ -1063,8 +1063,16 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
 
                 total_written += aux;
 
-                fsync(incomplete_fd);
-                close(incomplete_fd);
+                if ( fsync(incomplete_fd) == -1 )
+                {
+                    perror("fsync");
+                    exit(EXIT_FAILURE);
+                }
+                if ( close(incomplete_fd) == -1 )
+                {
+                    perror("close");
+                    exit(EXIT_FAILURE);
+                }
                 
                 is_incomplete = 0;
                 bytes_in_buffer -= remaining;
@@ -1083,12 +1091,26 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             // Abrimos el fichero
             current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
 
+            if (current_file < 0)
+            {
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+
             // Si el tamaño en bytes del fichero es mayor que los bytes
             // que tenemos actualmente en el buffer, el fichero quedará
             // incompleto y todos los bytes del buffer se consumirán
             if (NBYTES > bytes_in_buffer)
             {
-                total_written += write(current_file, data + total_written, bytes_in_buffer);
+                int aux = write(current_file, data + total_written, bytes_in_buffer);
+                
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+                
+                total_written += aux;
                 is_incomplete = 1;
                 incomplete_fd = current_file;
                 remaining = NBYTES - bytes_in_buffer;
@@ -1096,10 +1118,26 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             }
             else
             {
-                total_written += write(current_file, data + total_written, NBYTES);
+                int aux = write(current_file, data + total_written, NBYTES);
                 
-                fsync(current_file);
-                close(current_file);
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
+
+                if ( fsync(current_file) == -1 )
+                {
+                    perror("fsync");
+                    exit(EXIT_FAILURE);
+                }
+                if ( close(current_file) == -1 )
+                {
+                    perror("close");
+                    exit(EXIT_FAILURE);
+                }
 
                 bytes_in_buffer -= NBYTES;
                 
@@ -1108,6 +1146,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
     }
 }
 
+
+//Funcion complementaria a PSPLIT para la opcion -l
 int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 {
     int leidas = 0;
@@ -1128,6 +1168,7 @@ int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
     return cont;
 }
 
+
 int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
 {
     int cont = 0;
@@ -1140,6 +1181,7 @@ int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
     }
     return cont;
 }
+
 
 void escribir_lineas(int fd, char* file, int NLINES, int BSIZE) 
 {
@@ -1157,6 +1199,12 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
     // Leer mientras el fichero no esté vacío.
     while ((read_from_source = read(fd, data, BSIZE)) != 0)
     {
+        if (read_from_source == -1)
+        {
+            perror("read");
+            exit(EXIT_FAILURE);
+        }
+
         bytes_in_buffer = read_from_source;
         // Actúa como puntero al buffer de bytes, cada vez que escribamos
         // bytes del buffer en el fichero, se sumará el número de bytes
@@ -1172,15 +1220,42 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
             if (comprobacion == -1 || lineas_comprobadas < remaining)
             {
-                total_written += write(incomplete_fd, data, bytes_in_buffer);
+                int aux = write(incomplete_fd, data, bytes_in_buffer);
+                
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
                 remaining -= lineas_comprobadas;
                 bytes_in_buffer = 0;
             }
             else
             {
-                total_written += write(incomplete_fd, data, comprobacion);
-                fsync(incomplete_fd);
-                close(incomplete_fd);
+                int aux = write(incomplete_fd, data, comprobacion);
+                
+                if ( aux == -1 ) 
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
+
+                if ( fsync(incomplete_fd) == -1 )
+                {
+                    perror("fsync");
+                    exit(EXIT_FAILURE);
+                }
+
+                if ( close(incomplete_fd) == -1 )
+                {
+                    perror("close");
+                    exit(EXIT_FAILURE);
+                }
+
                 is_incomplete = 0;
                 remaining = NLINES;
                 bytes_in_buffer -= comprobacion;
@@ -1198,11 +1273,25 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             // Abrimos el fichero
             current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
 
+            if ( current_file < 0 ) 
+            {
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+
             int comprobacion = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
             int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
             if (lineas_comprobadas < remaining)
             {
-                total_written += write(current_file, data + total_written, bytes_in_buffer);
+                int aux = write(current_file, data + total_written, bytes_in_buffer);
+                
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
                 is_incomplete = 1;
                 incomplete_fd = current_file;
                 remaining -= lineas_comprobadas;
@@ -1210,15 +1299,35 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             }
             else
             {
-                total_written += write(current_file, data + total_written, comprobacion);
-                fsync(current_file);
-                close(current_file);
+                int aux = write(current_file, data + total_written, comprobacion);
+                
+                if ( aux == -1 )
+                {
+                    perror("write");
+                    exit(EXIT_FAILURE);
+                }
+
+                total_written += aux;
+
+                if ( fsync(current_file) == -1) 
+                {
+                    perror("fsync");
+                    exit(EXIT_FAILURE);
+                }
+
+                if ( close(current_file) == -1 )
+                {
+                    perror("close");
+                    exit(EXIT_FAILURE);
+                }
+
                 bytes_in_buffer -= comprobacion;
                 remaining = NLINES;
             }
         }
     }
 }
+
 
 void run_psplit(struct execcmd* ecmd)
 {
@@ -1323,13 +1432,34 @@ void run_psplit(struct execcmd* ecmd)
             while (procesos_en_vuelo < PROCS)
             {
                 int pid = fork();
+
+                if ( pid == -1 )
+                {
+                    perror("fork");
+                    exit(EXIT_FAILURE);
+                }
+
                 // CHILD execution.
                 if (pid == 0)
                 {
                     int fd = open(file_names[num_children], O_RDONLY);
+
+                    if ( fd < 0 )
+                    {
+                        perror("open");
+                        exit(EXIT_FAILURE);
+                    }
+
                     if (NBYTES != 1024) escribir_bytes(fd, file_names[num_children], NBYTES, BSIZE);
                     else if (NLINES != 0) escribir_lineas(fd, file_names[num_children], NLINES, BSIZE);
                     else escribir_bytes(fd, file_names[num_children], NBYTES, BSIZE);
+
+                    if ( close(fd) == -1 ) 
+                    {
+                        perror("close");
+                        exit(EXIT_FAILURE);
+                    } 
+
                     exit(EXIT_SUCCESS);
                 }
                 // PARENT execution.
@@ -1382,12 +1512,26 @@ void run_psplit(struct execcmd* ecmd)
         for (int i = 0; i < num_files; i++)
         {
             int fd = open(file_names[i], O_RDONLY);
+
+            if ( fd < 0 )
+            {
+                perror("open");
+                exit(EXIT_FAILURE);
+            }
+
             if (NBYTES != 1024) escribir_bytes(fd, file_names[i], NBYTES, BSIZE);
             else if (NLINES != 0) escribir_lineas(fd, file_names[i], NLINES, BSIZE);
             else escribir_bytes(fd, file_names[i], NBYTES, BSIZE);
+        
+            if ( close(fd) == -1 )
+            {
+                perror("close");
+                exit(EXIT_FAILURE);
+            }
         }
     }
 }
+
 
 void run_bjobs(struct execcmd* ecmd)
 {
@@ -1402,7 +1546,11 @@ void run_bjobs(struct execcmd* ecmd)
                 //Matamos a todos los procesos en segundo plano
                 for(int i = 0; i<NUM_BG_PIDS; i++){
                 if(BG_PIDS[i])
-                    kill(BG_PIDS[i], SIGKILL);
+                    if ( kill(BG_PIDS[i], SIGKILL) == -1)
+                    {
+                        perror("kill");
+                        exit(EXIT_FAILURE);
+                    }
                 }
                 return;
             case 'h':
