@@ -97,11 +97,11 @@ static const char WHITESPACE[] = " \t\r\n\v";
 // Caracteres especiales
 static const char SYMBOLS[] = "<|>&;()";
 
-// Comando internos
+//Comando internos
 static const char *INTERNAL_COMMANDS[] = {"exit", "cwd", "cd", "psplit", "bjobs"};
 
-// PIDS de procesos en segundo plano
-int BG_PIDS[NUM_BG_PIDS] = {0};
+//PID en segundo plano
+int BG_PIDS[NUM_BG_PIDS];
 
 
 /******************************************************************************
@@ -715,7 +715,7 @@ struct cmd* null_terminate(struct cmd* cmd)
     struct subscmd* scmd;
     int i;
 
-    if (cmd == 0)
+    if(cmd == 0)
         return 0;
 
     switch(cmd->type)
@@ -762,6 +762,10 @@ struct cmd* null_terminate(struct cmd* cmd)
     return cmd;
 }
 
+/******************************************************************************
+ * Free CMD
+ ******************************************************************************/
+
 void free_cmd(struct cmd* cmd)
 {
     struct execcmd* ecmd;
@@ -771,7 +775,7 @@ void free_cmd(struct cmd* cmd)
     struct backcmd* bcmd;
     struct subscmd* scmd;
 
-    if (cmd == 0) return;
+    if(cmd == 0) return;
 
     switch(cmd->type)
     {
@@ -832,24 +836,30 @@ void free_cmd(struct cmd* cmd)
  * Comandos internos de `simplesh`
  ******************************************************************************/
 
-void addjob(int pid)
-{
-    for (int i = 0; i < NUM_BG_PIDS; i++)
-        if (!BG_PIDS[i]) {
-            BG_PIDS[i] = pid;
-            break;
-        }
-}
 
 void deletejob(int pid)
 {
-    for (int i = 0; i < NUM_BG_PIDS; i++)
+    for (int i = 0; i<NUM_BG_PIDS; i++)
     {
-        if (BG_PIDS[i] == pid) {
+        if ( BG_PIDS[i] == pid ) 
+        {
+            // Eliminamos el pid de los procesos en segundo plano
             BG_PIDS[i] = 0;
             break;
         }
     }
+}
+
+void addjob(int pid)
+{
+    for (int i = 0; i<NUM_BG_PIDS; i++)
+    {
+        if ( !BG_PIDS[i] ) 
+        {
+            BG_PIDS[i] = pid;
+            break;
+        }
+    }    
 }
 
 
@@ -858,12 +868,13 @@ void handle_sigchld(int sig)
 {
     int saved_errno = errno;
     int pid;
-    
-    while ((pid = waitpid(-1, 0, WNOHANG)) > 0)  {
+    while ((pid = waitpid(-1, 0, WNOHANG)) > 0) 
+    {
+        // Imprimimos por STDOUT el pid que ha finalizado
         char buf[12];
         sprintf(buf, "[%d]", pid);
-        
-        if (write(STDOUT_FILENO, buf, strlen(buf)) == -1) {
+        if ( write(STDOUT_FILENO, buf, strlen(buf)) == -1 )
+        {
             perror("write");
             exit(EXIT_FAILURE);
         }
@@ -878,10 +889,12 @@ void handle_sigchld(int sig)
 void block_sigchld()
 {
     struct sigaction sa;
-    memset(&sa.sa_flags, 0, sizeof(int));
     sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
 
-    if (sigaction(SIGCHLD, &sa, 0) == -1) {
+    if( sigaction(SIGCHLD, &sa, 0) == -1 )
+    {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
@@ -892,10 +905,12 @@ void block_sigchld()
 void unblock_sigchld()
 {
     struct sigaction sa;
-    memset(&sa.sa_flags, 0, sizeof(int));
     sa.sa_handler = &handle_sigchld;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
 
-    if (sigaction(SIGCHLD, &sa, 0) == -1) {
+    if( sigaction(SIGCHLD, &sa, 0) == -1 )
+    {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
@@ -908,26 +923,27 @@ void unblock_sigchld()
 
 
 // Comprobar si un comando es interno
-
 int is_internal_cmd(char* cmd_name)
 {
-    if (cmd_name == NULL) 
+    if ( cmd_name == NULL ) 
         return 0;
 
-    for (int i = 0; i < NUM_INTERNAL_CMDS; i++)
-        if (strcmp(INTERNAL_COMMANDS[i], cmd_name) == 0)
+    for (int i = 0; i < NUM_INTERNAL_CMDS; i++) {
+        if(strcmp(INTERNAL_COMMANDS[i], cmd_name) == 0)
             return 1;
+    }
 
     return 0;
 }
 
-// Comando 'cwd'
 
+// Comando CWD
 void run_cwd()
 {
 
     char path[PATH_MAX];
-    if (!getcwd(path, PATH_MAX)) {
+    if (!getcwd(path, PATH_MAX))
+    {
         perror("getcwd");
         exit(EXIT_FAILURE);
     }
@@ -936,8 +952,7 @@ void run_cwd()
 }
 
 
-// Comando 'exit'
-
+// Comando EXIT
 void run_exit() 
 { 
     free_cmd(cmd);
@@ -945,28 +960,31 @@ void run_exit()
 }
 
 
-// Comando 'cd'
-
+// Comando CD
 void run_cd(char* path)
 {
     char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+    if (getcwd(cwd, sizeof(cwd)) == NULL)
+    {
         perror("getcwd");
         exit(EXIT_FAILURE);
     }
 
     // cd
-	if (path == NULL) {
+	if (path == NULL)
+    {
 		char* home = getenv("HOME");
-
-        if (home != NULL) {
-            // Cambiamos al directorio HOME
-            if (chdir(home) == -1) {
+        if (home != NULL)
+        {
+            if (chdir(home) == -1)
+            {
+                //Cambiamos al directorio HOME
                 perror("chdir");
                 exit(EXIT_FAILURE);
             } 
-            // Actualizamos la variable de entorno OLDPWD
-		    if (setenv("OLDPWD", cwd, 1) == -1) {
+		    if (setenv("OLDPWD", cwd, 1) == -1)
+            {
+                //Actualizamos la variable de entorno OLDPWD
                 perror("setenv");
                 exit(EXIT_FAILURE);
             }
@@ -974,17 +992,19 @@ void run_cd(char* path)
     }
 
     // cd [-]
-    else if (strcmp(path, "-") == 0) {
+    else if (strcmp(path, "-") == 0) 
+    {
 		char* oldpwd = getenv("OLDPWD");
-
-        if (oldpwd == NULL) 
-            printf("run_cd: Variable OLDPWD no definida\n");
-        else {
-		    if (chdir(oldpwd) == -1) {
+        if (oldpwd == NULL) printf("run_cd: Variable OLDPWD no definida\n");
+        else 
+        {
+		    if (chdir(oldpwd) == -1) 
+            {
                 perror("chdir");
                 exit(EXIT_FAILURE);
             }
-            if (setenv("OLDPWD", cwd, 1) == -1) {
+            if (setenv("OLDPWD", cwd, 1) == -1) 
+            {
                 perror("setenv");
                 exit(EXIT_FAILURE);
             }
@@ -993,10 +1013,11 @@ void run_cd(char* path)
 
     // cd dir
     else {
-        if (chdir(path) == -1) 
-            printf("run_cd: No existe el directorio '%s'\n", path);
-        else {   
-            if(setenv("OLDPWD", cwd, 1) == -1) {
+        if (chdir(path) == -1) printf("run_cd: No existe el directorio '%s'\n", path);
+        else 
+        {   
+            if(setenv("OLDPWD", cwd, 1) == -1) 
+            {
                 perror("setenv");
                 exit(EXIT_FAILURE);
             }
@@ -1020,14 +1041,16 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
     int bytes_in_buffer     = 0; // Bytes totales en el buffer
 
     // Leer mientras el fichero no esté vacío.
-    while ((read_from_source = read(fd, data, BSIZE)) != 0) {
-
-        if (read_from_source == -1) {
+    while ((read_from_source = read(fd, data, BSIZE)) != 0)
+    {
+        if ( read_from_source == -1 )
+        {
             perror("read");
             exit(EXIT_FAILURE);
         }
 
         bytes_in_buffer = read_from_source;
+        //printf("Datos leidos: %d\n", bytes_in_buffer);
         // Actúa como puntero al buffer de bytes, cada vez que escribamos
         // bytes del buffer en el fichero, se sumará el número de bytes
         // escritos a esta variable, por lo que la próxima vez 
@@ -1036,12 +1059,14 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
         total_written = 0;
 
         // Si el fichero está incompleto
-        if (is_incomplete) {
+        if (is_incomplete)
+        {
             // Si faltan más bytes por escribir de los que hay en el buffer
-            if (remaining > bytes_in_buffer) {
-                int aux = write(incomplete_fd, data, bytes_in_buffer);
-                
-                if (aux == -1) {
+            if (remaining > bytes_in_buffer)
+            {
+                int aux = write(current_file, data, bytes_in_buffer);
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
@@ -1050,32 +1075,39 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
                 remaining -= bytes_in_buffer;
                 bytes_in_buffer = 0;
             }
-            else {
-                int aux = write(incomplete_fd, data, remaining);
-
-                if (aux == -1) {
+            else
+            {
+                int aux = write(current_file, data, remaining);
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
 
                 total_written += aux;
 
-                if (fsync(incomplete_fd) == -1) {
+                
+                if ( fsync(current_file) == -1 )
+                {
                     perror("fsync");
                     exit(EXIT_FAILURE);
                 }
-                if (close(incomplete_fd) == -1) {
+                
+                if ( close(current_file) == -1 )
+                {
                     perror("close");
                     exit(EXIT_FAILURE);
                 }
                 
                 is_incomplete = 0;
-                bytes_in_buffer -= remaining;   
+                bytes_in_buffer -= remaining;
+                
             }
         }
 
         // Mientras queden bytes en el buffer...
-        while (bytes_in_buffer > 0) {
+        while (bytes_in_buffer > 0)
+        {
             // Construimos el nombre del nuevo fichero
             char file_name[32];
             sprintf(file_name, "%s%d", file, next_file_id);
@@ -1084,7 +1116,8 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             // Abrimos el fichero
             current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
 
-            if (current_file < 0) {
+            if (current_file < 0)
+            {
                 perror("open");
                 exit(EXIT_FAILURE);
             }
@@ -1092,40 +1125,45 @@ void escribir_bytes(int fd, char* file, int NBYTES, int BSIZE)
             // Si el tamaño en bytes del fichero es mayor que los bytes
             // que tenemos actualmente en el buffer, el fichero quedará
             // incompleto y todos los bytes del buffer se consumirán
-            if (NBYTES > bytes_in_buffer) {
+            if (NBYTES > bytes_in_buffer)
+            {
                 int aux = write(current_file, data + total_written, bytes_in_buffer);
-                
-                if (aux == -1) {
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
                 
                 total_written += aux;
                 is_incomplete = 1;
-                incomplete_fd = current_file;
                 remaining = NBYTES - bytes_in_buffer;
                 bytes_in_buffer = 0;
             }
-            else {
+            else
+            {
                 int aux = write(current_file, data + total_written, NBYTES);
-                
-                if (aux == -1) {
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
 
                 total_written += aux;
-
-                if (fsync(current_file) == -1) {
+                
+                if ( fsync(current_file) == -1 )
+                {
                     perror("fsync");
                     exit(EXIT_FAILURE);
                 }
-                if (close(current_file) == -1) {
+                
+                if ( close(current_file) == -1 )
+                {
                     perror("close");
                     exit(EXIT_FAILURE);
                 }
 
                 bytes_in_buffer -= NBYTES;
+                
             }
         }
     }
@@ -1138,15 +1176,16 @@ int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 {
     int leidas = 0;
     int cont = -1;
-    for (int i = escritos; i < bytes_leidos; i++) {
-
-        if (DATOS[i] ==  '\n') {
-            cont = (i - escritos) + 1;
+    for(int i = escritos; i<bytes_leidos; i++)
+    {
+        if(DATOS[i] ==  '\n')
+        {
+            cont = (i-escritos)+1;
             leidas++;
         }
-
-        if( leidas == lineas) {
-            cont = (i - escritos) + 1;
+        if(leidas == lineas)
+        {
+            cont = (i-escritos)+1;
             break;
         }
     }
@@ -1159,11 +1198,13 @@ int comprobar_linea(char* DATOS, int escritos, int lineas, int bytes_leidos)
 int contar_lineas(char* DATOS, int escritos, int bytes_escribir)
 {
     int cont = 0;
-
-    for (int i = escritos; i < escritos + bytes_escribir; i++) 
-        if (DATOS[i] == '\n')
+    for (int i = escritos; i<escritos+bytes_escribir; i++) 
+    {
+        if(DATOS[i] == '\n')
+        {
             cont++;
-
+        }
+    }
     return cont;
 }
 
@@ -1173,19 +1214,20 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
 {
     char data[BSIZE]; // Data buffer
 
-    int read_from_source    = 0;        // Bytes leídos del fichero original
-    int remaining           = NLINES;   // Lineas restantes por escribir en el fichero
-    int total_written       = 0;        // Bytes totales escritos del buffer
-    int is_incomplete       = 0;        // Flag de fichero incompleto
-    int incomplete_fd       = 0;        // Descriptor de fichero incompleto
-    int current_file        = 0;        // Descriptor del fichero actual
-    int next_file_id        = 0;        // Siguiente número de fichero
-    int bytes_in_buffer     = 0;        // Bytes totales en el buffer
+    int read_from_source    = 0; // Bytes leídos del fichero original
+    int remaining           = NLINES; // Lineas restantes por escribir en el fichero
+    int total_written       = 0; // Bytes totales escritos del buffer
+    int is_incomplete       = 0; // Flag de fichero incompleto
+    int incomplete_fd       = 0; // Descriptor de fichero incompleto
+    int current_file        = 0; // Descriptor del fichero actual
+    int next_file_id        = 0; // Siguiente número de fichero
+    int bytes_in_buffer     = 0; // Bytes totales en el buffer
 
     // Leer mientras el fichero no esté vacío.
-    while ((read_from_source = read(fd, data, BSIZE)) != 0) {
-
-        if (read_from_source == -1) {
+    while ((read_from_source = read(fd, data, BSIZE)) != 0)
+    {
+        if (read_from_source == -1)
+        {
             perror("read");
             exit(EXIT_FAILURE);
         }
@@ -1199,15 +1241,16 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
         total_written = 0;
 
         // Si el fichero está incompleto
-        if (is_incomplete) {
-        
-            int comprobacion        = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
-            int lineas_comprobadas  = contar_lineas(data, total_written, comprobacion);
-
-            if (comprobacion == -1 || lineas_comprobadas < remaining) {
+        if (is_incomplete)
+        {
+            int comprobacion = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
+            int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
+            if (comprobacion == -1 || lineas_comprobadas < remaining)
+            {
                 int aux = write(incomplete_fd, data, bytes_in_buffer);
                 
-                if (aux == -1) {
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
@@ -1216,22 +1259,26 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
                 remaining -= lineas_comprobadas;
                 bytes_in_buffer = 0;
             }
-            else {
+            else
+            {
                 int aux = write(incomplete_fd, data, comprobacion);
                 
-                if (aux == -1) {
+                if ( aux == -1 ) 
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
 
                 total_written += aux;
 
-                if (fsync(incomplete_fd) == -1) {
+                if ( fsync(incomplete_fd) == -1 )
+                {
                     perror("fsync");
                     exit(EXIT_FAILURE);
                 }
 
-                if (close(incomplete_fd) == -1) {
+                if ( close(incomplete_fd) == -1 )
+                {
                     perror("close");
                     exit(EXIT_FAILURE);
                 }
@@ -1243,8 +1290,8 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
         }
 
         // Mientras queden bytes en el buffer...
-        while (bytes_in_buffer > 0) {
-        
+        while (bytes_in_buffer > 0)
+        {
             // Construimos el nombre del nuevo fichero
             char file_name[32];
             sprintf(file_name, "%s%d", file, next_file_id);
@@ -1253,19 +1300,20 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
             // Abrimos el fichero
             current_file = open(file_name, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
 
-            if (current_file < 0) {
+            if ( current_file < 0 ) 
+            {
                 perror("open");
                 exit(EXIT_FAILURE);
             }
 
-            int comprobacion        = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
-            int lineas_comprobadas  = contar_lineas(data, total_written, comprobacion);
-
-            if (lineas_comprobadas < remaining) {
-            
+            int comprobacion = comprobar_linea(data, total_written, remaining, bytes_in_buffer);
+            int lineas_comprobadas = contar_lineas(data, total_written, comprobacion);
+            if (lineas_comprobadas < remaining)
+            {
                 int aux = write(current_file, data + total_written, bytes_in_buffer);
                 
-                if (aux == -1) {
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
@@ -1276,22 +1324,26 @@ void escribir_lineas(int fd, char* file, int NLINES, int BSIZE)
                 remaining -= lineas_comprobadas;
                 bytes_in_buffer = 0;
             }
-            else {
+            else
+            {
                 int aux = write(current_file, data + total_written, comprobacion);
                 
-                if (aux == -1) {
+                if ( aux == -1 )
+                {
                     perror("write");
                     exit(EXIT_FAILURE);
                 }
 
                 total_written += aux;
 
-                if (fsync(current_file) == -1) {
+                if ( fsync(current_file) == -1) 
+                {
                     perror("fsync");
                     exit(EXIT_FAILURE);
                 }
 
-                if (close(current_file) == -1) {
+                if ( close(current_file) == -1 )
+                {
                     perror("close");
                     exit(EXIT_FAILURE);
                 }
@@ -1319,9 +1371,10 @@ void run_psplit(struct execcmd* ecmd)
     int PROCS   = 1;
     int NBYTES  = 1024;
     
-    while ((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1) {
-
-        switch (opt) {
+    while ((opt = getopt(ecmd->argc, ecmd->argv, "l:b:s:p:h")) != -1)
+    {
+        switch (opt)
+        {
             case 'l': { NLINES = atoi(optarg); break; }
             case 'b': { NBYTES = atoi(optarg); break; }
             case 's': { BSIZE  = atoi(optarg); break; }
@@ -1337,25 +1390,42 @@ void run_psplit(struct execcmd* ecmd)
                 return;
 
             default:
-                fprintf(stderr, "Uso: %s [-l NLINES] [-b NBYTES] [-s BSIZE] [-p PROCS] [FILE1] [FILE2]...\n", ecmd->argv[0]);
+                printf("Uso: %s [-l NLINES] [-b NBYTES] [-s BSIZE] [-p PROCS] [FILE1] [FILE2]...\n", ecmd->argv[0]);
                 return;
         }   
     }
 
-    if (NLINES != 0 && NBYTES != 1024) {
+    if (NLINES != 0 && NBYTES != 1024)
+    {
         printf("%s: Opciones incompatibles\n", ecmd->argv[0]);
         return;
     }
 
-    if (BSIZE < 1 || BSIZE > MAX_BSIZE) {
+    if (BSIZE < 1 || BSIZE > MAX_BSIZE)
+    {
         printf("%s: Opción -s no válida\n", ecmd->argv[0]);
         return;   
     }
 
-    if (PROCS < 1) {
+    if (PROCS < 1)
+    {
         printf("%s: Opción -p no válida\n", ecmd->argv[0]);
         return;
     }
+
+    /*
+     * fork(psplit(f1); fork(psplit(f2)); ... ; fork(psplit(fn)))
+     * Hacer tantos fork como se pueda (depende de NPROCS)
+     * Una vez que no se puedan procesar más ficheros pero aún queden
+     * ficheros por procesar, habrá que esperar a que acabe el más
+     * antigüo.
+     *
+     * Almacenar los PID de los procesos que se lanzan para saber si ha
+     * finalizado el más antigüo.
+     *
+     * Si no quedan más ficheros se finaliza el bucle y se espera (wait())
+     * a los procesos en vuelo.
+     */
 
     int num_files = ecmd->argc - optind;
     char* file_names[num_files];
@@ -1365,41 +1435,46 @@ void run_psplit(struct execcmd* ecmd)
         file_names[index] = ecmd->argv[i];
 
     // Si no hay ficheros, leer de la entrada estándar
-    if (num_files == 0) {
+    if (num_files == 0)
+    {
         if (NBYTES != 1024) escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
         else if (NLINES != 0) escribir_lineas(STDIN_FILENO, "stdin", NLINES, BSIZE);
         else escribir_bytes(STDIN_FILENO, "stdin", NBYTES, BSIZE);
     }
-    
-    else if (PROCS > 1) {
+    else if (PROCS > 1)
+    {
         block_sigchld();
-        int pid;                    /* PID del proceso hijo */
         int num_children = 0;       /* Contador de hijos creados */
         int procesos_en_vuelo = 0;  /* Número de procesos corriendo al mismo tiempo */
         int running_pids[PROCS];    /* PIDs de los procesos ejecutándose */
-        int oldest_pid;             /* */
+        int oldest_pid = 0;             /* */
         int status;
         int procesos_terminados = 0;
+        
+        for(int i = 0; i < PROCS; i++) running_pids[i] = 0;
 
         // Mientras no se hayan creado tantos procesos hijo como
         // ficheros hay que procesar...
-        while (num_children < num_files) {
-        
+        while (num_children < num_files)
+        {
             // Si no se ha alcanzado PROCS, crear un nuevo proceso...
-            while (procesos_en_vuelo < PROCS) {
-
+            while (procesos_en_vuelo < PROCS)
+            {
                 int pid = fork();
 
-                if (pid == -1) {
+                if ( pid == -1 )
+                {
                     perror("fork");
                     exit(EXIT_FAILURE);
                 }
 
                 // CHILD execution.
-                if (pid == 0) {
+                if (pid == 0)
+                {
                     int fd = open(file_names[num_children], O_RDONLY);
 
-                    if (fd < 0) {
+                    if ( fd < 0 )
+                    {
                         perror("open");
                         exit(EXIT_FAILURE);
                     }
@@ -1408,36 +1483,35 @@ void run_psplit(struct execcmd* ecmd)
                     else if (NLINES != 0) escribir_lineas(fd, file_names[num_children], NLINES, BSIZE);
                     else escribir_bytes(fd, file_names[num_children], NBYTES, BSIZE);
 
-                    if (close(fd) == -1) {
+                    if ( close(fd) == -1 ) 
+                    {
                         perror("close");
                         exit(EXIT_FAILURE);
                     } 
 
                     exit(EXIT_SUCCESS);
                 }
-                
                 // PARENT execution.
                 // Almacenar PID del proceso creado. 
                 for (int i = 0; i < PROCS; i++)
-                    if (!running_pids[i]) { 
-                        running_pids[i] = pid; 
-                        break; 
-                    }
+                    if (!running_pids[i]) { running_pids[i] = pid; break; }
                 
                 // Actualizar variables de control. 
                 num_children++;
                 procesos_en_vuelo++;
                 
-                if (procesos_en_vuelo == num_files) break;
+                if(procesos_en_vuelo == num_files) break;
 
             }
             
             // Esperar al proceso más antigüo...
             oldest_pid = running_pids[0];
-            
-            for (int i = 0; i < PROCS; i++)
-                if (running_pids[i] < oldest_pid) 
+            for(int i = 0; i < PROCS; i++) {
+                if ( running_pids[i] < oldest_pid ) 
+                {
                     oldest_pid = running_pids[i];
+                }
+            }
 
             int ret;
             if ((ret = waitpid(oldest_pid, &status, 0)) > 0)
@@ -1453,19 +1527,23 @@ void run_psplit(struct execcmd* ecmd)
                     }
                 }
             }
+            
         }
 
-        for (int i = 0; i < num_children - procesos_terminados; i++)
-            waitpid(-1, &status, 0);
-
+        for(int i = 0; i < num_children-procesos_terminados; i++)
+        {
+            int hijo = waitpid(-1, &status, 0);
+        }
         unblock_sigchld();
     }
-    else {
-        for (int i = 0; i < num_files; i++) {
-        
+    else
+    {
+        for (int i = 0; i < num_files; i++)
+        {
             int fd = open(file_names[i], O_RDONLY);
 
-            if (fd < 0) {
+            if ( fd < 0 )
+            {
                 perror("open");
                 exit(EXIT_FAILURE);
             }
@@ -1474,7 +1552,8 @@ void run_psplit(struct execcmd* ecmd)
             else if (NLINES != 0) escribir_lineas(fd, file_names[i], NLINES, BSIZE);
             else escribir_bytes(fd, file_names[i], NBYTES, BSIZE);
         
-            if (close(fd) == -1) {
+            if ( close(fd) == -1 )
+            {
                 perror("close");
                 exit(EXIT_FAILURE);
             }
@@ -1483,25 +1562,25 @@ void run_psplit(struct execcmd* ecmd)
 }
 
 
-// Comando 'bjobs'
-
+// Comando BJOBS
 void run_bjobs(struct execcmd* ecmd)
 {
     int opt;
     optind = 1;
 
-    while ((opt = getopt(ecmd->argc, ecmd->argv, "kh")) != -1) {
-
-        switch (opt) {
-        
+    while ((opt = getopt(ecmd->argc, ecmd->argv, "kh")) != -1)
+    {
+        switch (opt)
+        {
             case 'k':
                 // Matamos a todos los procesos en segundo plano
-                for (int i = 0; i < NUM_BG_PIDS; i++) {
-                    if (BG_PIDS[i])
-                        if (kill(BG_PIDS[i], SIGKILL) == -1) {
-                            perror("kill");
-                            exit(EXIT_FAILURE);
-                        }
+                for(int i = 0; i<NUM_BG_PIDS; i++){
+                if(BG_PIDS[i])
+                    if ( kill(BG_PIDS[i], SIGKILL) == -1)
+                    {
+                        perror("kill");
+                        exit(EXIT_FAILURE);
+                    }
                 }
                 return;
             case 'h':
@@ -1517,25 +1596,25 @@ void run_bjobs(struct execcmd* ecmd)
     }   
 
     // Mostramos los procesos que estan en segundo plano
-    for (int i = 0; i<NUM_BG_PIDS; i++)
-        if (BG_PIDS[i])
+    for(int i = 0; i<NUM_BG_PIDS; i++){
+        if(BG_PIDS[i])
             printf("[%d]\n", BG_PIDS[i]);
+    }
 
 }
 
 
 void run_internal_cmd(struct execcmd* ecmd) 
 {
-	if (strcmp(ecmd->argv[0], "cwd") == 0)          run_cwd();
-	else if (strcmp(ecmd->argv[0], "exit") == 0)    run_exit();
-    else if (strcmp(ecmd->argv[0], "psplit") == 0)  run_psplit(ecmd);
-    else if (strcmp(ecmd->argv[0], "bjobs") == 0)   run_bjobs(ecmd);
-    else if (strcmp(ecmd->argv[0], "cd") == 0) {
-        if (ecmd->argc > 2)
-            printf("run_cd: Demasiados argumentos\n");
-        else
-            run_cd(ecmd->argv[1]);
-    }
+	if (strcmp(ecmd->argv[0], "cwd") == 0)       run_cwd();
+	else if (strcmp(ecmd->argv[0], "exit") == 0) run_exit();
+	else if (strcmp(ecmd->argv[0], "cd") == 0)
+	{
+	    if (ecmd->argc > 2) printf("run_cd: Demasiados argumentos\n");
+	    else run_cd(ecmd->argv[1]);
+	}
+    else if (strcmp(ecmd->argv[0], "psplit") == 0) run_psplit(ecmd);
+    else if (strcmp(ecmd->argv[0], "bjobs") == 0) run_bjobs(ecmd);
 }
 
 
@@ -1572,20 +1651,19 @@ void run_cmd(struct cmd* cmd)
 
     DPRINTF(DBG_TRACE, "STR\n");
 
-    if (cmd == 0) 
-        return;
+    if(cmd == 0) return;
 
-    switch(cmd->type) {
+    switch(cmd->type)
+    {
         case EXEC:
             ecmd = (struct execcmd*) cmd;
 
-	    	if (is_internal_cmd(ecmd->argv[0]))
+	    	//Comprobacion de si es comando interno o externo
+	    	if (is_internal_cmd(ecmd->argv[0]) == 1) {
 	    		run_internal_cmd(ecmd);
-
-	    	else {
+	    	} else {
             	if ((pid = fork_or_panic("fork EXEC")) == 0)
                 	exec_cmd(ecmd);
-
             	TRY( waitpid(pid, &status, 0) );
 	    	}
             break;
@@ -1593,18 +1671,17 @@ void run_cmd(struct cmd* cmd)
         case REDR:
             rcmd = (struct redrcmd*) cmd;
 
-            if (rcmd->cmd->type == EXEC) {
-            
+            if(rcmd->cmd->type == EXEC)
+            {
                 ecmd = (struct execcmd*) rcmd->cmd;
-                
-                if (is_internal_cmd(ecmd->argv[0])) {
-                
+                if(is_internal_cmd(ecmd->argv[0]) == 1)
+                {
                     int stdout_bak = dup(rcmd->fd);
-                    if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0) {
+                    if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0)
+                    {
                         perror("open");
                         exit(EXIT_FAILURE);
                     }
-                    
                     TRY( dup2(fd, rcmd->fd) );
                     TRY( close(fd) );
                     run_internal_cmd(ecmd);
@@ -1613,20 +1690,18 @@ void run_cmd(struct cmd* cmd)
                     break;
                 }
             }
-            if ((pid = fork_or_panic("fork REDR")) == 0) {
-
+            if ((pid = fork_or_panic("fork REDR")) == 0)
+            {
                 TRY( close(rcmd->fd) );
-
-                if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0) {
+                if ((fd = open(rcmd->file, rcmd->flags, rcmd->mode)) < 0)
+                {
                     perror("open");
                     exit(EXIT_FAILURE);
                 }
-                
                 if (rcmd->cmd->type == EXEC)
                     exec_cmd((struct execcmd*) rcmd->cmd);
                 else
                     run_cmd(rcmd->cmd);
-                    
                 exit(EXIT_SUCCESS);
             }
             TRY( waitpid(pid, &status, 0) );
@@ -1641,38 +1716,34 @@ void run_cmd(struct cmd* cmd)
         case PIPE:
             pcmd = (struct pipecmd*)cmd;
 
-            if (pipe(p) < 0) {
+            if (pipe(p) < 0)
+            {
                 perror("pipe");
                 exit(EXIT_FAILURE);
             }
 
             // Ejecución del hijo de la izquierda
             block_sigchld();
-            if ((pidI = fork_or_panic("fork PIPE left")) == 0) {
-            
+            if ((pidI = fork_or_panic("fork PIPE left")) == 0)
+            {
                 TRY( close(STDOUT_FILENO) );
                 TRY( dup(p[1]) );
                 TRY( close(p[0]) );
                 TRY( close(p[1]) );
-
                 if (pcmd->left->type == EXEC) {
-
                     ecmd = ((struct execcmd*) pcmd->left);
-
                     if (is_internal_cmd(ecmd->argv[0]) == 1)
 						run_internal_cmd(ecmd);
                     else
                         exec_cmd((struct execcmd*) pcmd->left);
-                } 
-                else
+                } else
                     run_cmd(pcmd->left);
-
                 exit(EXIT_SUCCESS);
             }
 
             // Ejecución del hijo de la derecha
-            if ((pidD = fork_or_panic("fork PIPE right")) == 0) {
-            
+            if ((pidD = fork_or_panic("fork PIPE right")) == 0)
+            {
                 TRY( close(STDIN_FILENO) );
                 TRY( dup(p[0]) );
                 TRY( close(p[0]) );
@@ -1680,17 +1751,13 @@ void run_cmd(struct cmd* cmd)
 
 				// Comprobar si es interno
                 if (pcmd->right->type == EXEC) {
-
                     ecmd = ((struct execcmd*) pcmd->right);
-
                     if (is_internal_cmd(ecmd->argv[0]) == 1)
 						run_internal_cmd(ecmd);
                     else
                         exec_cmd((struct execcmd*) pcmd->right);
-                } 
-                else
+                } else
                     run_cmd(pcmd->right);
-
                 exit(EXIT_SUCCESS);
             }
             TRY( close(p[0]) );
@@ -1711,37 +1778,32 @@ void run_cmd(struct cmd* cmd)
             bcmd = (struct backcmd*)cmd;
 
             sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
-
-            if ((pid = fork_or_panic("fork BACK")) == 0) {
-               
+            if ((pid = fork_or_panic("fork BACK")) == 0)
+            {   
                 sigprocmask(SIG_SETMASK, &prev_one, NULL);
-
                 if (bcmd->cmd->type == EXEC) {
-
                     ecmd = ((struct execcmd*) bcmd->cmd);
-
                     if (is_internal_cmd(ecmd->argv[0]) == 1)
                         run_internal_cmd(ecmd);
                     else
                         exec_cmd((struct execcmd*) bcmd->cmd);
-                } 
-                else
+                } else
                     run_cmd(bcmd->cmd);
 
                 exit(EXIT_SUCCESS);
             }
-            
             printf("[%d]\n", pid);
 
             sigprocmask(SIG_BLOCK, &mask_all, NULL);
+            
             addjob(pid);
+            
             sigprocmask(SIG_SETMASK, &prev_one, NULL);
 
             break;
 
         case SUBS:
             scmd = (struct subscmd*) cmd;
-
             if ((pid =fork_or_panic("fork SUBS")) == 0) {
                 run_cmd(scmd->cmd);
                 exit(EXIT_SUCCESS);
@@ -1849,14 +1911,16 @@ char* get_cmd()
     uid_t uid = getuid();
     struct passwd* passwd = getpwuid(uid);
 
-    if (!passwd) {
+    if(!passwd) 
+    {
 	    perror("getpwuid");
 	    exit(EXIT_FAILURE);
     }
     char* user = passwd -> pw_name;
 
     char path[PATH_MAX];
-    if (!getcwd(path, PATH_MAX)) {
+    if(!getcwd(path, PATH_MAX))
+    {
 	    perror("getcwd");
 	    exit(EXIT_FAILURE);
     }
@@ -1869,7 +1933,7 @@ char* get_cmd()
     buf = readline(prompt);
 
     // Si el usuario ha escrito una orden, almacenarla en la historia.
-    if (buf) add_history(buf);
+    if(buf) add_history(buf);
 
     return buf;
 }
@@ -1918,7 +1982,8 @@ void block_sigint()
     sigemptyset(&blocked_signals);
     sigaddset(&blocked_signals, SIGINT);
 
-    if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1) {
+    if (sigprocmask(SIG_BLOCK, &blocked_signals, NULL) == -1)
+    {
         perror("sigprocmask");
         exit(EXIT_FAILURE);
     }
@@ -1930,7 +1995,11 @@ void ignore_sigquit()
 {
     struct sigaction sa;
     sa.sa_handler = SIG_IGN;
-    if (sigaction(SIGQUIT, &sa, NULL) == -1) {
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    if (sigaction(SIGQUIT, &sa, NULL) == -1)
+    {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
@@ -1942,13 +2011,13 @@ void register_sigchld_handler()
 {
     /* Manejador de señales para SIGCHLD */
     struct sigaction sa;
-    memset(&sa.sa_flags, 0, sizeof(int));
 
     sa.sa_handler = &handle_sigchld;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
 
-    if (sigaction(SIGCHLD, &sa, 0) == -1) {
+    if (sigaction(SIGCHLD, &sa, 0) == -1) 
+    {
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
@@ -1966,8 +2035,9 @@ int main(int argc, char** argv)
     // Ignore SIGQUIT 
     ignore_sigquit();
     
-    if (unsetenv("OLDPWD") != 0) {
-        perror("unsetenv");
+    if (unsetenv("OLDPWD") != 0) 
+    {
+        perror("unset error");
         exit(EXIT_FAILURE);
     }
 
