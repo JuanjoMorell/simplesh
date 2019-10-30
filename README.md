@@ -1,13 +1,31 @@
-# simplesh
+# Simplesh
 
-24/10
-* Práctica terminada (aparentemente...)
+![GitHub repo size](https://img.shields.io/github/repo-size/JuanjoMorell/simplesh)
+![GitHub contributors](https://img.shields.io/github/contributors/JuanjoMorell/simplesh)
+![GitHub stars](https://img.shields.io/github/stars/JuanjoMorell/simplesh?style=social)
 
-25/09
-* cwd y cd terminados. Falta completar exit y REDR (run_cmd).
+Programa que simula el funcionamiento de una linea de comandos de linux.
 
-07/10
-* Eliminado el fichero internos por una lista dentro de simplesh
-* Redirecciones arregladas
+## Uso de simplesh
 
-Hecho por: Josepa y Juanjo
+Para ejecutar simplesh, realiza estos pasos:
+
+```
+make
+./simplesh
+```
+
+Si queremos comprobar si tiene alguna fuga de memoria, realizar los siguientes pasos:
+
+```
+make
+./valgrind.sh
+```
+Y al terminar la ejecución, en el fichero <valgrind.out> podremos comprobar los warnings y las perdidas de memoria.
+
+## Participantes
+
+Personas que han participado en este proyecto:
+
+* @JuanjoMorell 💻 
+* @areszao 💻
